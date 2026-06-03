@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% block title %}数据获取 - ASIN Lens{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="padding: 28px 32px; max-width: 2680px;height: 980px">
+    <h2 class="card-title" style="margin-bottom: 16px;">数据获取</h2>
+
+    {% if messages %}
+      <div style="margin: 10px 0 18px;">
+        {% for message in messages %}
+          <div style="
+              padding:10px 14px; border-radius: 14px; margin-bottom:10px;
+              background: {% if message.tags == 'success' %}#ecfdf3{% elif message.tags == 'error' %}#fef3f2{% else %}#f2f4f7{% endif %};
+              color: #1d1d1f; border: 1px solid #e8e8ed;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div style="color:#667085; font-size:0.92rem; margin-bottom: 14px;">
+      输入 ASIN 列表（支持 <strong>换行</strong> 或 <strong>逗号</strong> 分隔）。可单独获取或同时获取关键词与 Ask Rufus。
+    </div>
+
+    <form method="post" action="{% url 'data_fetch' %}">
+      {% csrf_token %}
+      <div class="field-group">
+        <div class="field-label">ASIN 列表</div>
+        <textarea name="asins" rows="8" placeholder="例如：&#10;B0F6MTPQVG&#10;B01B8R6PF2"
+                  style="width:100%; padding: 12px 14px; border-radius: 14px; border: 1px solid #e8e8ed; background:#fff; font-size: 0.95rem; line-height: 1.5;height: 450px"></textarea>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <button type="submit" name="action" value="keywords"
+                style="background:#f0f5ff; border:none; padding:10px 18px; border-radius:14px; font-weight:600; color:#0071e3; cursor:pointer;">
+          获取关键词
+        </button>
+        <button type="submit" name="action" value="ask_rufus"
+                style="background:#f0f5ff; border:none; padding:10px 18px; border-radius:14px; font-weight:600; color:#0071e3; cursor:pointer;">
+          获取 Ask Rufus
+        </button>
+        <button type="submit" name="action" value="both"
+                style="background:#0071e3; border:none; padding:10px 18px; border-radius:14px; font-weight:600; color:#fff; cursor:pointer;">
+          同时获取
+        </button>
+        <a href="/ai_listing/original_text"
+           style="margin-left:auto; color:#667085; text-decoration:none; font-weight:600;">
+          返回原文本 →
+        </a>
+      </div>
+
+      <div style="margin-top: 14px; color:#86868b; font-size:0.82rem;">
+        提示：批量获取会同步执行，数量较多时会等待更久；完成后会自动跳转到“原文本”页面查看结果。
+      </div>
+    </form>
+  </div>
+{% endblock %}
+

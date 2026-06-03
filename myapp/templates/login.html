@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}登录 - ASIN Lens{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="max-width: 520px; margin: 300px auto; padding: 28px 32px;">
+    <h2 class="card-title" style="margin: 34px 130px">📊 AI Listing</h2>
+
+    {% if messages %}
+      <div style="margin: 8px 0 14px;">
+        {% for message in messages %}
+          <div style="padding:10px 12px;border-radius:12px;margin-bottom:8px;background:#fef3f2;border:1px solid #ffd5d2;color:#912018;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'login' %}">
+      {% csrf_token %}
+      <div class="field-group">
+        <div class="field-label">用户名</div>
+        <input type="text" name="username" required value="{{ request.POST.username|default:'' }}"
+               style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+      </div>
+      <div class="field-group">
+        <div class="field-label">密码</div>
+        <input type="password" name="password" required
+               style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:4px;">
+        <a href="{% url 'forgot_password' %}" style="font-size:0.86rem;color:#0071e3;text-decoration:none;font-weight:500;">忘记密码？</a>
+      </div>
+      <div class="field-group">
+        <div class="field-label">验证码</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <img src="{% url 'captcha_image' %}?r={{ captcha_nonce }}" alt="验证码" id="login-captcha-img"
+               style="height:48px;border-radius:8px;border:1px solid #e8e8ed;cursor:pointer;background:#f9fafb;"
+               title="点击刷新验证码">
+          <input type="text" name="captcha" maxlength="8" required autocomplete="off" inputmode="text"
+                 placeholder="图中字符（不区分大小写）"
+                 style="flex:1;min-width:140px;padding:12px 14px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+        </div>
+        <div style="margin-top:6px;font-size:0.8rem;color:#667085;"></div>
+      </div>
+      <button type="submit"
+              style="width:100%;background:#0071e3;color:#fff;border:none;padding:12px 14px;border-radius:12px;font-weight:600;cursor:pointer;">
+        登录
+      </button>
+    </form>
+
+    <div style="margin-top: 12px; color:#667085; font-size:0.9rem;">
+      没有账号？<a href="{% url 'register' %}" style="color:#0071e3;text-decoration:none;">去注册</a>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var img = document.getElementById('login-captcha-img');
+      if (!img) return;
+      var base = "{% url 'captcha_image' %}";
+      img.addEventListener('click', function () {
+        img.src = base + '?r=' + Date.now();
+      });
+    })();
+  </script>
+{% endblock %}
+

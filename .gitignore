@@ -1,0 +1,33 @@
+# Python
+.venv/
+venv/
+*.pyo
+.Python
+*.so
+
+# 环境变量（含密钥，切勿提交）
+.env
+.env.local
+.env.*.local
+
+# Django
+db.sqlite3
+staticfiles/
+media/*
+!media/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+.env.tokens.tmp
+
+# OS
+.DS_Store
+Thumbs.db

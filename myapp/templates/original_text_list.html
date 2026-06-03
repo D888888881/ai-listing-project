@@ -1,0 +1,908 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}AI 原文本数据{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="padding: 28px 32px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom: 18px;">
+      <h2 class="card-title" style="margin-bottom:0; border-bottom:0; padding-bottom:0;">原文本数据</h2>
+      <div style="color:#86868b; font-size:0.9rem;">共 {{ page_obj.paginator.count }} 条</div>
+    </div>
+
+    {% if messages %}
+      <div style="margin: 10px 0 18px;">
+        {% for message in messages %}
+          <div style="
+              padding:10px 14px; border-radius: 14px; margin-bottom:10px;
+              background: {% if message.tags == 'success' %}#ecfdf3{% elif message.tags == 'error' %}#fef3f2{% else %}#f2f4f7{% endif %};
+              color: #1d1d1f; border: 1px solid #e8e8ed;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 18px;">
+      <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; flex:1;">
+        <form action="{% url 'import_voc' %}" method="post" enctype="multipart/form-data" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+          {% csrf_token %}
+          {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+          {% include "includes/preserve_get.html" %}
+          <div style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <span style="font-size:0.75rem;font-weight:600;color:#667085;letter-spacing:0.02em;margin-left: 14px">选择文件</span>
+              <input type="file" name="files" accept=".json,application/json" multiple class="voc-file-input voc-file-input-files"/>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <span style="font-size:0.75rem;font-weight:600;color:#667085;letter-spacing:0.02em;margin-left: 14px">选择文件夹</span>
+              <input type="file" name="files" webkitdirectory directory multiple class="voc-file-input voc-file-input-folder"/>
+            </div>
+          </div>
+          <button type="submit" class="btn-pill btn-pill-primary">上传</button>
+        </form>
+        <form action="{% url 'import_voc_cluster' %}" method="post" enctype="multipart/form-data" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; padding: 10px 14px; border-radius: 16px; border: 1px dashed #B2DDFF; background: #F8FBFF;">
+          {% csrf_token %}
+          {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+          {% include "includes/preserve_get.html" %}
+
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <span style="font-size:0.72rem;font-weight:600;color:#667085;margin-left: 11px">选择 VOC 集群文件夹</span>
+            <input type="file" name="cluster_files" webkitdirectory directory multiple class="voc-file-input voc-file-input-folder"/>
+          </div>
+          <button type="submit" class="btn-pill btn-pill-primary" style="background:#e0f2fe;color:#026AA2;">导入 VOC 集群</button>
+        </form>
+        {% if is_asin_admin %}
+        <form method="get" action="{% url 'original_text_list' %}" style="display:flex; flex-direction:column; gap:6px;">
+          <div class="field-label" style="margin-bottom:0;margin-left: 3px">按用户筛选</div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+            <select name="filter_user" style="min-width:160px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+              <option value="">全部用户</option>
+              {% for u in assignable_users %}
+              <option value="{{ u.pk }}" {% if filter_user_id == u.pk %}selected{% endif %}>{{ u.username }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn-pill btn-pill-primary">筛选</button>
+            {% if filter_user_id %}
+              <a href="{% url 'original_text_list' %}{% if search_q %}?q={{ search_q|urlencode }}{% endif %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除用户筛选</a>
+            {% endif %}
+          </div>
+        </form>
+        {% endif %}
+        <form method="get" action="{% url 'original_text_list' %}" style="display:flex; flex-direction:column; gap:6px;">
+          <div class="field-label" style="margin-bottom:0;margin-left: 3px">ASIN 搜索</div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="text" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字"
+                   style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;"/>
+            <button type="submit" class="btn-pill btn-pill-primary">搜索</button>
+            {% if search_q %}
+              <a href="{% url 'original_text_list' %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
+            {% endif %}
+          </div>
+        </form>
+        <form method="post" action="{% url 'batch_delete_original_text' %}" id="form-batch-original" style="display:flex; align-items:flex-end;">
+          {% csrf_token %}
+          {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+          {% include "includes/preserve_get.html" %}
+          <button type="submit" class="mini-btn danger" style="padding:10px 18px; white-space:nowrap;" onclick="return confirm('确定批量删除选中的原文本记录？');">批量删除</button>
+        </form>
+      </div>
+    </div>
+
+    <style>
+      /* 椭圆形按钮（胶囊） */
+      .btn-pill {
+        border: none;
+        padding: 10px 26px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: background 0.2s, box-shadow 0.2s;
+      }
+      .btn-pill-primary {
+        background: #f0f5ff;
+        color: #0071e3;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+      }
+      .btn-pill-primary:hover {
+        background: #dce9ff;
+      }
+      /* 文件选择：标签已区分「文件 / 文件夹」，浏览按钮做成圆角胶囊 */
+      .voc-file-input {
+        font-size: 0.82rem;
+        max-width: 240px;
+      }
+      .voc-file-input::file-selector-button {
+        margin-right: 10px;
+        padding: 8px 16px;
+        border-radius: 999px;
+        border: 1px solid #e8e8ed;
+        background: #f9fafb;
+        color: #344054;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .voc-file-input::file-selector-button:hover {
+        background: #f2f4f7;
+      }
+
+      .raw-table { width: 100%; border-collapse: collapse; min-width: 1280px; font-size: 0.88rem; }
+      .raw-table th { padding: 14px 12px; font-weight: 600; color: #86868b; text-align: left; border-bottom: 2px solid #e8e8ed; white-space: nowrap; }
+      .raw-table td { padding: 12px 12px; border-bottom: 1px solid #f0f0f5; vertical-align: top; }
+      .raw-table tr:hover td { background: #fafafa; }
+
+      .cell-preview { color:#1d1d1f; max-width: 360px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap; display:inline-block; vertical-align: middle; }
+      .mini-btn {
+        background: #f0f5ff; border: none; padding: 6px 12px; border-radius: 14px;
+        font-weight: 500; color: #0071e3; cursor: pointer; transition: background 0.2s; font-size: 0.8rem;
+      }
+      .mini-btn:hover { background: #dce9ff; }
+      .mini-btn.secondary { background: #f2f4f7; color:#344054; }
+      .mini-btn.secondary:hover { background: #eaecf0; }
+      .stack { display:flex; gap:8px; flex-wrap: wrap; }
+      .chip{
+        display:inline-flex;
+        align-items:center;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #F2F4F7;
+        color:#344054;
+        font-size: 12px;
+        line-height: 1.2;
+        border: 1px solid #EAECF0;
+        max-width: 260px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-right: 6px;
+        margin-bottom: 6px;
+      }
+      .chip.blue{ background:#F0F5FF; border-color:#DCE9FF; color:#004EEB; }
+      .chip.gray{ background:#F2F4F7; border-color:#EAECF0; color:#344054; }
+      .preview-wrap{ display:flex; flex-wrap: wrap; gap: 0; align-items:center; }
+      .muted{ color:#86868b; font-style: italic; }
+      .rufus-list{ display:flex; flex-direction: column; gap: 10px; }
+      .rufus-item{
+        padding: 12px 14px;
+        border: 1px solid #EAECF0;
+        border-radius: 14px;
+        background: #ffffff;
+      }
+      .rufus-item-title{
+        font-size: 12px;
+        font-weight: 700;
+        color:#667085;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .rufus-item-question{
+        font-size: 13px;
+        font-weight: 600;
+        color: #101828;
+        line-height: 1.45;
+        margin-bottom: 6px;
+      }
+      .rufus-item-answer{
+        font-size: 12px;
+        color: #475467;
+        line-height: 1.55;
+        white-space: normal;
+        word-break: break-word;
+      }
+      .rufus-item-compact{
+        padding: 8px 10px;
+        border-radius: 10px;
+        margin-bottom: 6px;
+      }
+      .rufus-item-compact:last-child{ margin-bottom: 0; }
+      .rufus-item-q-only .rufus-item-question{ margin-bottom: 0; }
+      .rufus-more-hint{
+        font-size: 11px;
+        color: #667085;
+        margin-top: 4px;
+      }
+      .ask-preview .rufus-list{ gap: 6px; }
+      .inline-cell{
+        display:flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .inline-cell .preview-wrap{
+        flex: 1;
+        min-width: 0;
+      }
+      .ask-inline-cell{
+        align-items: flex-start;
+      }
+      .ask-inline-cell .preview-wrap{
+        max-height: 220px;
+        overflow-y: auto;
+      }
+      .mini-btn.danger {
+        background: #fef3f2;
+        color: #b42318;
+      }
+      .mini-btn.danger:hover {
+        background: #fee4e2;
+      }
+
+      /* VOC 悬浮框（复用 analysis_list 的模态交互，但 body 放 HTML） */
+      .voc-modal-overlay {
+        position: fixed; inset: 0; z-index: 1100;
+        background: rgba(0,0,0,0.3); backdrop-filter: blur(8px);
+        display: none; align-items: center; justify-content: center;
+      }
+      .voc-modal-card {
+        background: #fff; border-radius: 22px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
+        width: 92%; max-width: 1180px; max-height: 84vh;
+        display: flex; flex-direction: column;
+      }
+      .voc-modal-header {
+        display:flex; align-items:center; justify-content:space-between;
+        padding: 18px 22px; border-bottom:1px solid #e8e8ed;
+      }
+      .voc-modal-title { font-size: 1.1rem; font-weight: 600; color:#1d1d1f; }
+      .voc-modal-close {
+        background:none; border:none; font-size: 1.6rem; color:#86868b; cursor:pointer; line-height:1;
+      }
+      .voc-modal-close:hover { color:#1d1d1f; }
+      .voc-modal-body { padding: 18px 22px 22px; overflow-y:auto; }
+
+      .voc-md-root { font-size: 12px; line-height: 1.35; color: #101828; }
+      .voc-md-root .voc-md-h3 {
+        font-size: 13px; font-weight: 700; margin: 10px 0 6px; color: #004EEB;
+        padding-bottom: 4px; border-bottom: 1px solid #EAECF0;
+      }
+      .voc-md-root .voc-md-h4 {
+        font-size: 12px; font-weight: 700; margin: 8px 0 4px; color: #344054;
+      }
+      .voc-md-root .voc-md-hr { border: 0; border-top: 1px dashed #D0D5DD; margin: 12px 0; }
+      .voc-md-root .voc-md-ul { margin: 4px 0 8px 16px; padding: 0; }
+      .voc-md-root .voc-md-ul li { margin: 2px 0; }
+      .voc-md-root .voc-md-p { margin: 4px 0; color: #475467; }
+      .voc-md-root .voc-md-table {
+        width: 100%; border-collapse: collapse; margin: 4px 0 10px;
+        font-size: 11px; table-layout: fixed;
+      }
+      .voc-md-root .voc-md-table col.voc-col-desc { width: 30%; }
+      .voc-md-root .voc-md-table col.voc-col-pct { width: 10%; }
+      .voc-md-root .voc-md-table col.voc-col-reason { width: auto; }
+      .voc-md-root .voc-md-table th,
+      .voc-md-root .voc-md-table td {
+        border: 1px solid #EAECF0; padding: 3px 6px; vertical-align: top;
+        word-break: break-word;
+      }
+      .voc-md-root .voc-md-table th { background: #F9FAFB; color: #667085; font-weight: 600; }
+
+      /* 对标 + 集群 VOC 分块（bundle 视图，易读） */
+      .voc-bundle-wrap { display: flex; flex-direction: column; gap: 14px; }
+      .voc-bundle-panel { border-radius: 14px; border: 1px solid #E4E7EC; overflow: hidden; background: #fff; }
+      .voc-bundle-panel--target {
+        border-color: #7CD4FD;
+        box-shadow: 0 2px 10px rgba(0, 113, 227, 0.09);
+      }
+      .voc-bundle-panel--cluster { background: #F8FAFC; border-color: #D0D5DD; }
+      .voc-bundle-panel-head {
+        display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+        gap: 8px; padding: 10px 14px; min-height: 42px;
+      }
+      .voc-bundle-panel--target .voc-bundle-panel-head {
+        background: linear-gradient(135deg, #E0F2FE 0%, #F0F9FF 50%, #fff 100%);
+        font-weight: 700; font-size: 13px; color: #075985;
+      }
+      .voc-bundle-panel--cluster .voc-bundle-panel-head {
+        background: #EEF2FF; font-weight: 700; font-size: 12px; color: #1D2939;
+      }
+      .voc-bundle-asin { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; letter-spacing: 0.02em; }
+      .voc-bundle-badges { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+      .voc-bundle-badge {
+        font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+      }
+      .voc-bundle-badge--cluster { background: #DCFCE7; color: #166534; border: 1px solid #86EFAC; }
+      .voc-bundle-badge--row { background: #E0E7FF; color: #3730A3; border: 1px solid #C7D2FE; }
+      .voc-bundle-badge--empty { background: #FEE4E2; color: #B42318; border: 1px solid #FECDCA; }
+      .voc-bundle-panel-body { padding: 12px 14px 14px; background: #fff; }
+      .voc-bundle-panel--cluster .voc-bundle-panel-body { background: #FAFBFC; }
+      .voc-md-root--inner { font-size: 12.5px; line-height: 1.52; color: #1D2939; }
+      .voc-md-root--inner .voc-md-h3 { font-size: 14px; margin-top: 14px; color: #026AA2; }
+      .voc-md-root--inner .voc-md-h3:first-child { margin-top: 0; }
+      .voc-md-root--inner .voc-md-h4 { font-size: 13px; margin-top: 12px; color: #344054; }
+      .voc-md-root--inner .voc-md-table col.voc-col-desc { width: 30%; }
+      .voc-md-root--inner .voc-md-table col.voc-col-pct { width: 10%; }
+      .voc-md-root--inner .voc-md-table { font-size: 12px; }
+      .voc-md-root--inner .voc-md-table tbody tr:nth-child(even) td { background: #F9FAFB; }
+      .voc-bundle-empty {
+        margin: 0; padding: 14px; text-align: center; color: #667085; font-size: 12px;
+        background: #fff; border-radius: 10px; border: 1px dashed #D0D5DD;
+      }
+
+      .voc-md-table--consumer-wide td,
+      .voc-md-table--consumer-wide th {
+        word-break: break-word;
+        white-space: normal;
+        vertical-align: top;
+      }
+
+      /* ========== VOC（shulex）样式：用于还原你截图的布局 ========== */
+      .shulexVocSSBodyCardList{
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+      /* 消费者画像独占一行，内部四维度横向排布 */
+      .shulexVocSSBodyCard--consumer-span {
+        grid-column: 1 / -1;
+      }
+      @media (max-width: 980px){
+        .shulexVocSSBodyCardList{ grid-template-columns: 1fr; }
+      }
+      .shulexVocSSBodyCard{
+        background: #ffffff;
+        border-radius: 16px;
+        border: 1px solid #EAECF0;
+        overflow: hidden;
+        box-shadow: 0 1px 8px rgba(16,24,40,0.04);
+      }
+      .shulexVocSSBodyCardHead{
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 16px;
+        border-bottom: 1px solid #F2F4F7;
+      }
+      .shulexVocSSBodyCardHead svg{
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+      }
+      .shulexVocSSBodyCardHead span{
+        font-size: 14px;
+        font-weight: 600;
+        color: #101828;
+      }
+
+      /* 消费者画像 */
+      .shulexVocSSCardBodyNer{ padding: 14px 16px 16px; }
+      .shulexVocSSNerSexPercent{
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 6px 0 12px;
+      }
+      .shulexVocSSNerSexNum{ font-weight: 700; color:#101828; min-width: 42px; text-align: center; }
+      .shulexVocSSNerSexItem{
+        position: relative;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #F2F4F7;
+        display: grid;
+        place-items: center;
+      }
+      .shulexVocSSNerSexItem svg{ width: 18px; height: 18px; }
+      .shulexVocSSNerSexItemMask{
+        position:absolute;
+        left:0; right:0; bottom:0;
+        background: rgba(16,24,40,0.12);
+      }
+      .shulexVocSSNerLine{ width: 100%; height: 14px; margin: 2px 0 10px; }
+      .shulexVocSSNerBox{
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .shulexVocSSNerItem{
+        flex: 1 1 0;
+        min-width: 120px;
+        border: 1px solid #F2F4F7;
+        border-radius: 12px;
+        padding: 8px 10px 10px;
+        background: #FAFBFC;
+      }
+      .shulexVocSSNerName{
+        font-size: 12px;
+        font-weight: 600;
+        color: #667085;
+        margin-bottom: 8px;
+      }
+      .shulexVocSSAspect{
+        display:flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        font-size: 12px;
+        color: #101828;
+        padding: 3px 0;
+      }
+      .shulexVocSSAspectText{
+        max-width: none;
+        flex: 1;
+        min-width: 0;
+        overflow:hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* VOC 表格卡（使用场景/好评/差评等） */
+      .shulexVocSSTable{ padding: 12px 16px 16px; }
+      .shulexVocSSTableHead{ margin-bottom: 8px; }
+      .shulexVocSSTableRow{
+        display: grid;
+        grid-template-columns: minmax(0, 30%) minmax(0, 10%) 1fr 34px;
+        gap: 10px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #F2F4F7;
+      }
+      .shulexVocSSTableRow:last-child{ border-bottom: 0; }
+      .shulexVocSSTableCell{
+        font-size: 12px;
+        color: #101828;
+        min-width: 0;
+      }
+      .shulexVocSSTableHead .shulexVocSSTableCell{
+        font-weight: 600;
+        color: #667085;
+      }
+      .shulexVocSSTableLastCell{
+        color: #344054;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .shulexVocSSTablePercent{
+        display:flex;
+        align-items:center;
+        gap: 10px;
+      }
+      .shulexVocSSTablePercentNum{
+        font-weight: 700;
+        color:#101828;
+        min-width: 38px;
+      }
+      .shulexVocSSTablePercentBar{
+        flex: 1;
+        height: 6px;
+        border-radius: 999px;
+        background: #EAECF0;
+        overflow: hidden;
+      }
+      .shulexVocSSTablePercentLine{
+        height: 100%;
+        border-radius: 999px;
+        background: #12B76A; /* 默认绿 */
+        width: 0%;
+      }
+      .slxBarBlue .shulexVocSSTablePercentLine{ background: #1570EF; }
+      .slxBarOrange .shulexVocSSTablePercentLine{ background: #F79009; }
+      .slxBarGreen .shulexVocSSTablePercentLine{ background: #12B76A; }
+      .slxBarRed .shulexVocSSTablePercentLine{ background: #F04438; }
+      .slxBarYellow .shulexVocSSTablePercentLine{ background: #DC6803; }
+
+      .slx_table_expand_btn{
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        background: transparent;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .slx_table_expand_btn:hover{
+        background: #F2F4F7;
+        border-color: #EAECF0;
+      }
+      .slx_table_expand{ width: 14px; height: 14px; }
+
+      /* 弹窗里的“全量表格”允许原因换行 */
+      .slxModalReasonWrap{
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        line-height: 1.55;
+      }
+    </style>
+
+
+    <div style="overflow:auto;">
+      <table class="raw-table">
+        <thead>
+        <tr>
+          <th style="width: 40px;"><input type="checkbox" id="check-all-original" title="全选" aria-label="全选"></th>
+          <th style="width: 6%;">ASIN</th>
+          <th style="width: 5%;">上传者</th>
+          <th style="width: 8%;">分配给</th>
+          {% if is_asin_admin %}<th style="width: 10%;">分配</th>{% endif %}
+          <th style="width: 17%;">关键词</th>
+          <th style="width: 18%;">Ask Rufus</th>
+          <th style="width: 14%;">ASIN 集群</th>
+          <th style="width: 7%;">VOC</th>
+          <th style="width: 18%;">操作</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for row in rows %}
+          <tr>
+            <td style="vertical-align:middle;">
+              <input type="checkbox" name="asins" value="{{ row.asin }}" class="row-check-original" form="form-batch-original">
+            </td>
+            <td style="font-weight:600; color:#0071e3;">{{ row.asin }}</td>
+            <td style="font-size:0.82rem;color:#475467;">
+              {% if row.obj.created_by %}{{ row.obj.created_by.username }}{% else %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td style="font-size:0.82rem;color:#475467;">
+              {% if row.obj.assigned_to %}{{ row.obj.assigned_to.username }}{% else %}<span class="muted">未分配</span>{% endif %}
+            </td>
+            {% if is_asin_admin %}
+            <td>
+              <form method="post" action="{% url 'assign_original_asin' row.asin %}" style="display:flex;flex-direction:column;gap:6px;">
+                {% csrf_token %}
+                {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                {% include "includes/preserve_get.html" %}
+                <select name="assigned_to" style="width:100%;padding:6px 8px;border-radius:10px;border:1px solid #e8e8ed;font-size:0.8rem;">
+                  <option value="">未分配</option>
+                  {% for u in assignable_users %}
+                  <option value="{{ u.pk }}" {% if row.obj.assigned_to_id == u.pk %}selected{% endif %}>{{ u.username }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="mini-btn" style="align-self:flex-start;">保存分配</button>
+              </form>
+            </td>
+            {% endif %}
+
+            <td title="{% if row.obj and row.obj.keywords %}{{ row.obj.keywords|join:', ' }}{% endif %}">
+              {% if row.obj and row.obj.keywords %}
+                <div class="inline-cell">
+                  <div class="preview-wrap kw-preview" data-asin="{{ row.asin }}"></div>
+                  <button type="button" class="mini-btn secondary kw-expand-btn"
+                          data-asin="{{ row.asin }}" style="white-space:nowrap;">展开</button>
+                </div>
+                {% with "kw-json-"|add:row.asin as kw_id %}
+                  {{ row.obj.keywords|json_script:kw_id }}
+                {% endwith %}
+              {% else %}
+                <span class="muted">暂无</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if row.obj and row.obj.ask_rufus %}
+                <div class="inline-cell ask-inline-cell">
+                  <div class="preview-wrap ask-preview" data-asin="{{ row.asin }}"></div>
+                  <button type="button" class="mini-btn secondary ask-expand-btn"
+                          data-asin="{{ row.asin }}" style="white-space:nowrap;align-self:flex-start;">展开</button>
+                </div>
+                {% with "ask-json-"|add:row.asin as ask_id %}
+                  {{ row.obj.ask_rufus|json_script:ask_id }}
+                {% endwith %}
+              {% else %}
+                <span class="muted">暂无</span>
+              {% endif %}
+            </td>
+
+            <td title="{% if row.obj and row.obj.asin_cluster %}{{ row.obj.asin_cluster|join:', ' }}{% endif %}">
+              {% if row.obj and row.obj.asin_cluster %}
+                <div class="inline-cell">
+                  <div class="preview-wrap cluster-preview" data-asin="{{ row.asin }}"></div>
+                  <button type="button" class="mini-btn secondary cluster-expand-btn"
+                          data-asin="{{ row.asin }}" style="white-space:nowrap;">展开</button>
+                </div>
+                {% with "cluster-json-"|add:row.asin as cid %}
+                  {{ row.obj.asin_cluster|json_script:cid }}
+                {% endwith %}
+              {% else %}
+                <span class="muted">暂无</span>
+              {% endif %}
+            </td>
+
+            <td>
+              {% if row.voc_bundle %}
+                <button type="button" class="mini-btn voc-open-btn" data-asin="{{ row.asin }}">展开</button>
+                {% with "voc-json-"|add:row.asin as voc_id %}
+                  {{ row.voc_bundle|json_script:voc_id }}
+                {% endwith %}
+              {% else %}
+                <span style="color:#86868b; font-style: italic;">未导入</span>
+              {% endif %}
+            </td>
+
+            <td>
+              <div class="stack">
+                <form action="{% url 'refresh_keywords' row.asin %}" method="post" style="display:inline;">
+                  {% csrf_token %}
+                  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" class="mini-btn">刷新关键词</button>
+                </form>
+                <form action="{% url 'refresh_ask_rufus' row.asin %}" method="post" style="display:inline;">
+                  {% csrf_token %}
+                  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" class="mini-btn">刷新 Ask Rufus</button>
+                </form>
+                <form action="{% url 'refresh_asin_cluster' row.asin %}" method="post" style="display:inline;">
+                  {% csrf_token %}
+                  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" class="mini-btn" title="用关键词列表首词（或首集群首词）搜索亚马逊并写入集群">刷新 ASIN 集群</button>
+                </form>
+                <form action="{% url 'delete_original_text_row' row.asin %}" method="post" style="display:inline;"
+                      onsubmit="return confirm('确定删除该条原文本记录？');">
+                  {% csrf_token %}
+                  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" class="mini-btn danger">删除</button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="{% if is_asin_admin %}10{% else %}9{% endif %}" style="padding: 48px; text-align: center; color: #86868b;">暂无数据</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs %}
+  </div>
+
+  <div id="voc-modal" class="voc-modal-overlay" aria-hidden="true">
+    <div class="voc-modal-card" role="dialog" aria-modal="true" aria-label="VOC 详情" style="max-width: 1800px">
+      <div class="voc-modal-header">
+        <div class="voc-modal-title" id="voc-modal-title">VOC</div>
+        <button type="button" class="voc-modal-close" id="voc-modal-close" aria-label="关闭">&times;</button>
+      </div>
+      <div class="voc-modal-body" id="voc-modal-body"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_scripts %}
+  <script src="{% static 'js/shulex_voc_render.js' %}"></script>
+  <script src="{% static 'js/ask_rufus_render.js' %}"></script>
+  <script>
+    (function () {
+      function getJsonScript(id) {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        try { return JSON.parse(el.textContent); } catch (e) { return null; }
+      }
+
+      function escHtml(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      }
+
+      function renderVocHtml(voc) {
+        if (typeof window.renderShulexVocHtml === 'function') {
+          return window.renderShulexVocHtml(voc, { embedFull: false });
+        }
+        return '<div class="shulexVocSSBodyCardList"><p style="padding:16px;color:#667085;">VOC 渲染脚本未加载</p></div>';
+      }
+
+      const vocModal = document.getElementById('voc-modal');
+      const vocBody = document.getElementById('voc-modal-body');
+      const vocTitle = document.getElementById('voc-modal-title');
+      const vocClose = document.getElementById('voc-modal-close');
+      const stateStack = [];
+
+      function setModalState(title, html, { resetStack = false, rawVoc } = {}) {
+        if (resetStack) stateStack.length = 0;
+        vocTitle.textContent = title;
+        if (rawVoc !== undefined) vocBody.__vocRawData = rawVoc;
+        vocBody.innerHTML = html;
+        vocModal.style.display = 'flex';
+        vocModal.setAttribute('aria-hidden', 'false');
+      }
+
+      function popOrClose() {
+        if (stateStack.length > 0) {
+          const prev = stateStack.pop();
+          vocTitle.textContent = prev.title;
+          vocBody.innerHTML = prev.html;
+          if (prev.rawVoc !== undefined) vocBody.__vocRawData = prev.rawVoc;
+          return;
+        }
+        vocModal.style.display = 'none';
+        vocModal.setAttribute('aria-hidden', 'true');
+        vocBody.innerHTML = '';
+        vocBody.__vocRawData = null;
+      }
+
+      function openVoc(asin, voc) {
+        setModalState(`VOC - ${asin}`, renderVocHtml(voc), { resetStack: true, rawVoc: voc });
+      }
+
+      function closeVoc() {
+        popOrClose();
+      }
+
+      const ASIN_PLACE = 'ZZZZZZZZZZ';
+      const URL_CLUSTER_REFRESH_TMPL = "{% url 'refresh_asin_cluster' 'ZZZZZZZZZZ' %}";
+      const URL_CLUSTER_SAVE_TMPL = "{% url 'save_asin_cluster' 'ZZZZZZZZZZ' %}";
+      const SEARCH_Q = "{{ search_q|default:''|escapejs }}";
+
+      function getCsrfToken() {
+        const inp = document.querySelector('#form-batch-original input[name=csrfmiddlewaretoken]');
+        return inp ? inp.value : '';
+      }
+      function clusterRefreshUrl(asin) { return URL_CLUSTER_REFRESH_TMPL.replace(ASIN_PLACE, asin); }
+      function clusterSaveUrl(asin) { return URL_CLUSTER_SAVE_TMPL.replace(ASIN_PLACE, asin); }
+
+      document.querySelectorAll('.voc-open-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const asin = this.dataset.asin;
+          const voc = getJsonScript(`voc-json-${asin}`) ?? {};
+          openVoc(asin, voc);
+        });
+      });
+
+      if (typeof window.installVocExpandForModal === 'function') {
+        window.installVocExpandForModal(vocBody, vocTitle, {
+          stack: stateStack,
+          getFallbackRawVoc: function () {
+            const m = (vocTitle.textContent || '').match(/VOC\s*-\s*(.+)$/);
+            const asin = m ? m[1].trim() : '';
+            return asin ? (getJsonScript(`voc-json-${asin}`) ?? {}) : {};
+          },
+        });
+      }
+
+      // Ask Rufus：问题 + 解答分开展示
+      document.querySelectorAll('.ask-expand-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const asin = this.dataset.asin;
+          const ask = getJsonScript(`ask-json-${asin}`) ?? {};
+          const bodyHtml = (window.AskRufusRender && window.AskRufusRender.buildListHtml)
+            ? window.AskRufusRender.buildListHtml(ask, { compact: false })
+            : '<span class="muted">暂无</span>';
+          const html = `
+            <div class="shulexVocSSBodyCardList" style="grid-template-columns: 1fr;">
+              <div class="shulexVocSSBodyCard">
+                <div class="shulexVocSSBodyCardHead"><span>Ask Rufus</span></div>
+                <div style="padding: 14px 16px 16px;">
+                  ${bodyHtml}
+                </div>
+              </div>
+            </div>
+          `.trim();
+          setModalState(`Ask Rufus - ${asin}`, html, { resetStack: true, rawVoc: null });
+        });
+      });
+
+      // 关键词：同样支持展开（避免列表过长占位置）
+      document.querySelectorAll('.kw-expand-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const asin = this.dataset.asin;
+          const kws = getJsonScript(`kw-json-${asin}`) ?? [];
+          const list = Array.isArray(kws) ? kws : [];
+          const html = `
+            <div class="shulexVocSSBodyCardList" style="grid-template-columns: 1fr;">
+              <div class="shulexVocSSBodyCard">
+                <div class="shulexVocSSBodyCardHead"><span>关键词</span></div>
+                <div style="padding: 14px 16px 16px;">
+                  <div style="display:flex; flex-wrap: wrap;">
+                    ${list.map(kw => `<span class="chip blue" title="${String(kw).replace(/"/g,'&quot;')}">${String(kw)}</span>`).join('')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          `.trim();
+          setModalState(`关键词 - ${asin}`, html, { resetStack: true, rawVoc: null });
+        });
+      });
+
+      document.querySelectorAll('.cluster-expand-btn').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          const asin = this.dataset.asin;
+          const arr = getJsonScript(`cluster-json-${asin}`) ?? [];
+          const list = Array.isArray(arr) ? arr : [];
+          const defaultText = list.join('\n');
+          const escQ = SEARCH_Q
+            ? `<input type="hidden" name="q" value="${SEARCH_Q.replace(/"/g, '&quot;')}">`
+            : '';
+          const ta = String(defaultText)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+          const chips = list.map(a => `<span class="chip gray">${escHtml(String(a))}</span>`).join('');
+          const html = `
+            <div class="shulexVocSSBodyCardList" style="grid-template-columns: 1fr;">
+              <div class="shulexVocSSBodyCard">
+                <div class="shulexVocSSBodyCardHead"><span>ASIN 集群</span></div>
+                <div style="padding: 14px 16px 16px;">
+                  <div style="display:flex; flex-wrap: wrap; gap:6px; margin-bottom:12px;">${chips || '<span class="muted">暂无</span>'}</div>
+                  <form action="${clusterSaveUrl(asin)}" method="post" style="margin-bottom:12px;">
+                    <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                    ${escQ}
+                    <textarea name="cluster_raw" rows="8" style="width:100%;box-sizing:border-box;border-radius:12px;border:1px solid #EAECF0;padding:10px;font-family:ui-monospace,monospace;font-size:12px;">${ta}</textarea>
+                    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;">
+                      <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;">保存集群</button>
+                    </div>
+                  </form>
+                  <form action="${clusterRefreshUrl(asin)}" method="post" onsubmit="return confirm('将用关键词首词搜索亚马逊并覆盖当前集群列表，确定？');">
+                    <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
+                    ${escQ}
+                    <button type="submit" class="mini-btn" style="padding:10px 16px;">从关键词自动拉取集群</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          `.trim();
+          setModalState(`ASIN 集群 - ${asin}`, html, { resetStack: true, rawVoc: null });
+        });
+      });
+
+      if (vocClose) vocClose.addEventListener('click', closeVoc);
+      vocModal.addEventListener('click', function (e) { if (e.target === vocModal) closeVoc(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && vocModal.style.display === 'flex') closeVoc(); });
+
+      // 预览渲染：关键词用 chips，Ask Rufus 用简短摘要
+      document.querySelectorAll('.kw-preview').forEach(el => {
+        const asin = el.dataset.asin;
+        const kws = getJsonScript(`kw-json-${asin}`) ?? [];
+        const list = Array.isArray(kws) ? kws : [];
+        const preview = list.slice(0, 3);
+        el.innerHTML = preview.map(kw => `<span class="chip gray" title="${String(kw).replace(/"/g,'&quot;')}">${String(kw)}</span>`).join('');
+        if (list.length > preview.length){
+          el.innerHTML += `<span class="chip gray">+${list.length - preview.length}</span>`;
+        }
+      });
+
+      document.querySelectorAll('.ask-preview').forEach(el => {
+        const asin = el.dataset.asin;
+        const ask = getJsonScript(`ask-json-${asin}`) ?? {};
+        if (window.AskRufusRender && window.AskRufusRender.buildListHtml) {
+          el.innerHTML = window.AskRufusRender.buildListHtml(ask, {
+            compact: true,
+            maxItems: 2,
+            questionsOnly: true
+          });
+        } else {
+          el.innerHTML = '<span class="muted">暂无</span>';
+        }
+      });
+
+      document.querySelectorAll('.cluster-preview').forEach(el => {
+        const asin = el.dataset.asin;
+        const arr = getJsonScript(`cluster-json-${asin}`) ?? [];
+        const list = Array.isArray(arr) ? arr : [];
+        if (!list.length) {
+          el.innerHTML = `<span class="muted">暂无</span>`;
+          return;
+        }
+        const preview = list.slice(0, 3);
+        el.innerHTML = preview.map(a => `<span class="chip gray" title="${String(a).replace(/"/g,'&quot;')}">${String(a)}</span>`).join('');
+        if (list.length > preview.length) {
+          el.innerHTML += `<span class="chip gray">+${list.length - preview.length}</span>`;
+        }
+      });
+
+      const chkAllOrig = document.getElementById('check-all-original');
+      if (chkAllOrig) {
+        chkAllOrig.addEventListener('change', function () {
+          document.querySelectorAll('.row-check-original').forEach(cb => { cb.checked = chkAllOrig.checked; });
+        });
+      }
+    })();
+  </script>
+{% endblock %}
+

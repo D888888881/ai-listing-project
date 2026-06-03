@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block title %}审批页面 - ASIN Lens{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="padding: 28px 32px;">
+    <h2 class="card-title" style="margin-bottom: 16px;">注册审批（超级管理员）</h2>
+
+    {% if messages %}
+      <div style="margin: 8px 0 14px;">
+        {% for message in messages %}
+          <div style="padding:10px 12px;border-radius:12px;margin-bottom:8px;background:#f2f4f7;border:1px solid #e4e7ec;color:#344054;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <h3 style="font-size:1rem;font-weight:700;color:#344054;margin:12px 0;">待审批</h3>
+    <div style="overflow:auto; margin-bottom:22px;">
+      <table style="width:100%;border-collapse:collapse;min-width:760px;font-size:0.9rem;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">用户名</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">邮箱</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">注册时间</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in pending_profiles %}
+          <tr>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="width:30px;height:30px;border-radius:50%;background:#dce9ff;color:#004eeB;font-weight:700;display:inline-flex;align-items:center;justify-content:center;text-transform:uppercase;">{{ p.user.username|slice:":1" }}</span>
+                <span>{{ p.user.username }}</span>
+              </div>
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;color:#344054;">{{ p.user.email|default:"-" }}</td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">{{ p.created_at }}</td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <form method="post" action="{% url 'approval_action' p.user.id 'approve' %}">
+                  {% csrf_token %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" style="background:#ecfdf3;border:1px solid #d1fadf;border-radius:12px;padding:6px 12px;cursor:pointer;">
+                    通过
+                  </button>
+                </form>
+                <form method="post" action="{% url 'approval_action' p.user.id 'reject' %}">
+                  {% csrf_token %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" style="background:#fef3f2;border:1px solid #fecdca;border-radius:12px;padding:6px 12px;cursor:pointer;">
+                    拒绝
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" style="padding:28px;color:#98a2b3;">暂无待审批用户</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=pending_page_obj pagination_qs=pending_pagination_qs page_param="pending_page" %}
+
+    <h3 style="font-size:1rem;font-weight:700;color:#344054;margin:12px 0;">审批记录</h3>
+    <div style="overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;min-width:980px;font-size:0.9rem;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">用户</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">邮箱</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">审批结果</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">审批人</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">审批时间</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rec in approval_records %}
+            <tr>
+              <td style="padding:12px;border-bottom:1px solid #f2f4f7;">{{ rec.user.username }}</td>
+              <td style="padding:12px;border-bottom:1px solid #f2f4f7;">{{ rec.user.email|default:"-" }}</td>
+              <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+                {% if rec.approval_status == 'approved' %}
+                  <span style="padding:4px 10px;border-radius:999px;background:#ecfdf3;color:#027a48;border:1px solid #d1fadf;">已通过</span>
+                {% else %}
+                  <span style="padding:4px 10px;border-radius:999px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;">已拒绝</span>
+                {% endif %}
+              </td>
+              <td style="padding:12px;border-bottom:1px solid #f2f4f7;">{{ rec.approved_by.username|default:"-" }}</td>
+              <td style="padding:12px;border-bottom:1px solid #f2f4f7;">{{ rec.approved_at|default:rec.created_at }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" style="padding:24px;color:#98a2b3;">暂无审批记录</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=records_page_obj pagination_qs=records_pagination_qs page_param="records_page" %}
+  </div>
+{% endblock %}
+

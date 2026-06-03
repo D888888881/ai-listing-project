@@ -1,0 +1,2783 @@
+{% extends 'base.html' %}
+
+{% block title %}AI 生图{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ai-img-wrap { padding-bottom: 220px; }
+    .ai-img-pagination-bar {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        z-index: 85;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #e8e8ed;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        box-sizing: border-box;
+    }
+    .ai-img-pagination-bar .app-pagination {
+        margin: 0 !important;
+    }
+    .ai-img-table-wrap { overflow-x: auto; }
+    .ai-img-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1200px;
+        font-size: 0.86rem;
+    }
+    .ai-img-ta {
+        width: 100%;
+        min-width: 140px;
+        min-height: 88px;
+        max-height: 520px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid #e8e8ed;
+        font-family: inherit;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: #344054;
+        resize: vertical;
+        box-sizing: border-box;
+    }
+    .ai-img-ta:focus {
+        outline: none;
+        border-color: #0071e3;
+        box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12);
+    }
+    .ai-img-table th, .ai-img-table td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e8e8ed;
+        vertical-align: top;
+    }
+    .ai-img-table th {
+        color: #667085;
+        font-weight: 600;
+        white-space: nowrap;
+        background: #fafafa;
+    }
+    .ai-img-table tr.row-selected td { background: #f0f7ff; }
+    .ai-img-table tr.row-processing td { background: #fffaeb; }
+    .ai-img-table tr.row-done td { background: #ecfdf3; }
+    .ai-img-table tr.row-fail td { background: #fef3f2; }
+    .asin-pick-checkbox { width: 16px; height: 16px; cursor: pointer; accent-color: #0071e3; }
+    .ai-img-save-cell { white-space: nowrap; width: 1%; vertical-align: top; }
+    .ai-img-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+    }
+    .ai-img-gallery {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+        min-height: 24px;
+    }
+    .ai-img-thumb {
+        width: 64px;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #e8e8ed;
+        background: #f9fafb;
+    }
+    .ai-img-upload-row {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .ai-img-upload-row input[type="file"] { font-size: 0.75rem; max-width: 100%; }
+    .btn-row-save, .btn-row-fetch, .btn-batch-fetch {
+        border: none;
+        background: #f2f4f7;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.82rem;
+    }
+    .btn-row-save:hover, .btn-row-fetch:hover { background: #e8ecf1; }
+    .btn-batch-fetch {
+        background: #fff;
+        border: 1px solid #d0d5dd;
+    }
+    .btn-batch-fetch:hover { background: #f9fafb; }
+    .btn-batch-need {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.82rem;
+    }
+    .btn-batch-need:hover { background: #f9fafb; }
+    .btn-batch-need-main { border-color: #84caff; color: #175cd3; background: #eff8ff; }
+    .btn-batch-need-main:hover { background: #d1e9ff; }
+    .btn-batch-need-aplus { border-color: #c4b5fd; color: #5925dc; background: #f4f3ff; }
+    .btn-batch-need-aplus:hover { background: #ebe9fe; }
+    .btn-row-need {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.74rem;
+    }
+    .btn-row-need:hover { background: #f9fafb; }
+    .btn-row-need-main { border-color: #84caff; color: #175cd3; background: #eff8ff; }
+    .btn-row-need-aplus { border-color: #c4b5fd; color: #5925dc; background: #f4f3ff; }
+    .btn-row-fetch:disabled, .btn-batch-fetch:disabled, .btn-batch-need:disabled, .btn-row-need:disabled, .btn-orig-expand:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+    .btn-row-fetch { background: #eff8ff; color: #175cd3; border: none; }
+    .btn-row-fetch:hover { background: #d1e9ff; }
+    .btn-row-upload {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.76rem;
+    }
+    .btn-row-upload:hover { background: #f9fafb; }
+    .ai-img-empty-hint { color: #98a2b3; font-size: 0.76rem; }
+    .ai-orig-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 160px;
+    }
+    .ai-orig-counts {
+        font-size: 0.72rem;
+        color: #667085;
+        line-height: 1.5;
+    }
+    .ai-orig-counts strong { color: #344054; font-weight: 600; }
+    .btn-orig-expand {
+        align-self: flex-start;
+        border: 1px solid #0071e3;
+        background: #fff;
+        color: #0071e3;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.78rem;
+    }
+    .btn-orig-expand:hover { background: #f0f7ff; }
+    .ai-orig-mini-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    .ai-orig-mini-preview img {
+        width: 36px;
+        height: 36px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1px solid #e8e8ed;
+    }
+    .ai-img-dock {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%);
+        z-index: 90;
+        width: min(760px, calc(100vw - 32px));
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #e8e8ed;
+        border-radius: 18px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+        backdrop-filter: blur(12px);
+    }
+    .ai-img-dock-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #f2f4f7;
+    }
+    .ai-img-dock-head h3 { margin: 0; font-size: 0.95rem; font-weight: 600; color: #1d1d1f; }
+    .ai-img-dock-meta { font-size: 0.8rem; color: #667085; }
+    .ai-img-dock-body { padding: 12px 16px 16px; }
+    .ai-img-dock-body.collapsed { display: none; }
+    .ai-img-dock textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid #e8e8ed;
+        font-family: inherit;
+        font-size: 0.9rem;
+        resize: vertical;
+        margin-bottom: 12px;
+    }
+    .ai-img-dock-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .btn-dock-toggle {
+        border: none;
+        background: #f2f4f7;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    .btn-dock-toggle:hover { background: #e8ecf1; }
+    .btn-dock-submit {
+        border: none;
+        background: #0071e3;
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.88rem;
+    }
+    .btn-dock-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+    .ai-gen-mode {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+        font-size: 0.85rem;
+        color: #344054;
+    }
+    .ai-gen-mode label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+    .ai-gen-mode input[type="radio"] { accent-color: #0071e3; }
+    .ai-dock-field-label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #667085;
+        display: block;
+        margin-bottom: 6px;
+    }
+    #single_module_prompt {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        border: 1px solid #d0d5dd;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+        box-sizing: border-box;
+    }
+    #single_module_section {
+        border: 1px solid #d0d5dd;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-size: 0.85rem;
+        margin-bottom: 10px;
+    }
+    .dock-single-panel { display: none; margin-bottom: 10px; }
+    .dock-single-panel.is-active { display: block; }
+    .btn-dock-submit-secondary {
+        border: 1px solid #0071e3;
+        background: #fff;
+        color: #0071e3;
+        padding: 10px 20px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.88rem;
+    }
+    .btn-dock-submit-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .ai-hidden-forms {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    /* 原图弹窗 */
+    .ai-orig-modal-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: rgba(15, 23, 42, 0.45);
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+    }
+    .ai-orig-modal-backdrop.open { display: flex; }
+    .ai-orig-modal {
+        width: min(2420px, 100%);
+        max-height: calc(100vh - 48px);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .ai-orig-modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 20px;
+        border-bottom: 1px solid #f2f4f7;
+        flex-shrink: 0;
+    }
+    .ai-orig-modal-head h3 { margin: 0; font-size: 1rem; color: #1d1d1f; }
+    .ai-orig-modal-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+    }
+    .ai-orig-modal-body {
+        padding: 16px 20px 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+    .ai-orig-section {
+        margin-bottom: 24px;
+    }
+    .ai-orig-section:last-child { margin-bottom: 0; }
+    .ai-orig-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #e8f4fd;
+    }
+    .ai-orig-section-title h4 {
+        margin: 0;
+        font-size: 0.92rem;
+        color: #175cd3;
+        font-weight: 700;
+    }
+    .ai-orig-section-title .badge {
+        font-size: 0.75rem;
+        color: #667085;
+        background: #f2f4f7;
+        padding: 4px 10px;
+        border-radius: 999px;
+    }
+    .ai-orig-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 12px;
+    }
+    .ai-orig-grid-item {
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid #e8e8ed;
+        background: #f9fafb;
+        aspect-ratio: 1;
+    }
+    .ai-orig-grid-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .ai-orig-grid-item .orig-pick-check {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        z-index: 6;
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+        display: none;
+        accent-color: #0071e3;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+    .ai-orig-modal.edit-mode .ai-orig-grid-item .orig-pick-check { display: block; }
+    .ai-orig-grid-item.is-pick-selected {
+        outline: 3px solid #0071e3;
+        box-shadow: 0 0 0 1px #0071e3;
+    }
+    .ai-orig-grid-item .img-open-link {
+        position: absolute;
+        left: 6px;
+        bottom: 6px;
+        z-index: 4;
+        font-size: 0.65rem;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.55);
+        padding: 3px 7px;
+        border-radius: 4px;
+        text-decoration: none;
+    }
+    .ai-orig-grid-item .img-open-link:hover { background: rgba(0, 0, 0, 0.75); }
+    .ai-orig-section-upload {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+    }
+    .ai-orig-section-upload input[type="file"] { font-size: 0.75rem; max-width: 200px; }
+    .btn-modal {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+    .btn-modal:hover { background: #f9fafb; }
+    .btn-modal-primary {
+        border: none;
+        background: #0071e3;
+        color: #fff;
+    }
+    .btn-modal-primary:hover { background: #0077ed; }
+    .btn-modal-danger {
+        border: 1px solid #fda29b;
+        background: #fff;
+        color: #b42318;
+    }
+    .btn-modal-danger:hover { background: #fef3f2; }
+    .btn-modal-danger:disabled { opacity: 0.45; cursor: not-allowed; }
+    .ai-orig-empty-section {
+        color: #98a2b3;
+        font-size: 0.8rem;
+        padding: 16px;
+        text-align: center;
+        background: #fafafa;
+        border-radius: 10px;
+    }
+    .btn-modal-close {
+        border: none;
+        background: transparent;
+        font-size: 1.4rem;
+        line-height: 1;
+        cursor: pointer;
+        color: #667085;
+        padding: 4px 8px;
+    }
+    .btn-modal-accent {
+        border: 1px solid #175cd3;
+        background: #eff8ff;
+        color: #175cd3;
+        padding: 7px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.82rem;
+    }
+    .btn-modal-accent:hover { background: #d1e9ff; }
+    .ai-orig-subsection {
+        margin-top: 18px;
+        padding-top: 16px;
+        border-top: 1px dashed #e8e8ed;
+    }
+    .ai-orig-section-native .ai-orig-section-title h4 { color: #027a48; }
+    .ai-orig-section-native { border: 1px solid #abefc6; border-radius: 12px; padding: 12px; margin-bottom: 16px; background: #f6fef9; }
+    .ai-fin-opt-modal { width: min(920px, 100%); }
+    .ai-fin-opt-step { margin-bottom: 18px; }
+    .ai-fin-opt-step h4 { margin: 0 0 10px; font-size: 0.92rem; color: #344054; }
+    .ai-fin-opt-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 10px;
+        max-height: 580px;
+        overflow-y: auto;
+        padding: 2px;
+    }
+    .ai-fin-opt-pick {
+        position: relative;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 2px solid transparent;
+        cursor: pointer;
+        aspect-ratio: 1;
+        background: #f9fafb;
+    }
+    .ai-fin-opt-pick img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .ai-fin-opt-pick.is-selected { border-color: #0071e3; box-shadow: 0 0 0 2px rgba(0,113,227,.15); }
+    .ai-fin-opt-pick .pick-tag {
+        position: absolute;
+        left: 6px;
+        top: 6px;
+        background: rgba(0,0,0,.55);
+        color: #fff;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+    }
+    .ai-fin-opt-ta {
+        width: 100%;
+        min-height: 120px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #e8e8ed;
+        font-family: inherit;
+        font-size: 0.84rem;
+        line-height: 1.5;
+        resize: vertical;
+        box-sizing: border-box;
+    }
+    .ai-fin-opt-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 0 20px 20px;
+    }
+    .ai-fin-opt-loading {
+        display: none;
+        margin: 0 20px 16px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #eff8ff;
+        border: 1px solid #b2ddff;
+        color: #175cd3;
+        font-size: 0.84rem;
+    }
+    .ai-fin-opt-loading.show { display: block; }
+    .ai-fin-opt-loading-inner {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .ai-fin-opt-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid #b2ddff;
+        border-top-color: #175cd3;
+        border-radius: 50%;
+        animation: ai-fin-opt-spin 0.8s linear infinite;
+        flex-shrink: 0;
+    }
+    @keyframes ai-fin-opt-spin {
+        to { transform: rotate(360deg); }
+    }
+    .ai-fin-opt-modal.is-optimizing .ai-fin-opt-pick { pointer-events: none; opacity: 0.55; }
+    .ai-fin-opt-modal.is-optimizing .ai-fin-opt-ta { pointer-events: none; opacity: 0.7; }
+    .btn-modal-primary:disabled,
+    .btn-modal-accent:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+    .btn-modal-primary.is-loading {
+        opacity: 0.85;
+        cursor: wait;
+    }
+    .ai-fetch-toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 300;
+        padding: 12px 18px;
+        border-radius: 12px;
+        background: #1d1d1f;
+        color: #fff;
+        font-size: 0.85rem;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        display: none;
+    }
+    .ai-fetch-toast.show { display: block; }
+    .ai-fetch-toast.error { background: #b42318; }
+    .ai-md-modal-body { max-height: 70vh; overflow-y: auto; padding: 16px 20px 20px; }
+    .ai-md-asin-block { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #f2f4f7; }
+    .ai-md-asin-block:last-child { border-bottom: 0; margin-bottom: 0; }
+    .ai-md-asin-block h4 { margin: 0 0 10px; color: #175cd3; font-size: 0.95rem; }
+    .ai-md-content { font-size: 0.84rem; line-height: 1.6; color: #344054; }
+    .ai-md-content h2 { font-size: 1rem; margin: 14px 0 8px; color: #1d1d1f; border-left: 3px solid #0071e3; padding-left: 8px; }
+    .ai-md-content h3 { font-size: 0.92rem; margin: 10px 0 6px; }
+    .ai-md-content p { margin: 6px 0; }
+    .ai-md-content ul { margin: 6px 0 6px 18px; }
+    .ai-md-empty { color: #98a2b3; font-size: 0.84rem; }
+    .btn-dock-view-need {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.82rem;
+        margin-right: 8px;
+    }
+    .btn-dock-view-need:hover { background: #f9fafb; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="apple-card ai-img-wrap" style="padding: 28px 32px;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 18px;">
+        <div>
+            <h2 class="card-title" style="margin-bottom:8px; border-bottom:0; padding-bottom:0;">AI 生图</h2>
+            <p style="margin:0; color:#86868b; font-size:0.9rem; max-width:960px;">
+                与<strong>原文本</strong> ASIN 列表一致（共 {{ page_obj.paginator.count }} 条）。填写<strong>主图图需</strong>、<strong>APlus图需</strong>；
+                勾选多个 ASIN 后可<strong>批量获取图片</strong>、<strong>批量生成图需</strong>、<strong>批量开始生图</strong>；请先上传<strong>产品原生图</strong>（生图时替换 Listing 产品，场景/排版不变）。表头可全选本页。
+            </p>
+        </div>
+        <span style="color:#86868b; font-size:0.9rem;">共 {{ page_obj.paginator.count }} 条</span>
+    </div>
+
+    {% if messages %}
+    <div id="ai-page-messages" style="margin: 0 0 18px;">
+        {% for message in messages %}
+        <div class="ai-page-flash" style="padding:10px 14px;border-radius:14px;margin-bottom:10px;background:{% if message.tags == 'success' %}#ecfdf3{% elif message.tags == 'error' %}#fef3f2{% else %}#f2f4f7{% endif %};border:1px solid #e8e8ed;color:#1d1d1f;">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="get" action="{% url 'ai_image_gen' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+        <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
+               style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;">
+        <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;border-radius: 100px;">搜索</button>
+        <button type="button" class="btn-batch-fetch" id="btn-batch-fetch-images">批量获取图片</button>
+        <button type="button" class="btn-batch-need btn-batch-need-main" id="btn-batch-main-need">生成主图图需</button>
+        <button type="button" class="btn-batch-need btn-batch-need-aplus" id="btn-batch-aplus-need">生成APlus图需</button>
+        <span id="toolbar-selected-hint" style="font-size:0.82rem;color:#667085;">请先勾选表格中的 ASIN</span>
+        {% if search_q %}
+        <a href="{% url 'ai_image_gen' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+        {% endif %}
+    </form>
+
+    <div class="ai-hidden-forms" aria-hidden="true">
+        {% for row in rows %}
+        <form id="ai-img-save-{{ forloop.counter0 }}" method="post" action="{% url 'ai_image_gen' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_image_gen_inputs">
+            <input type="hidden" name="asin" value="{{ row.asin }}">
+            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+            {% include "includes/preserve_get.html" %}
+        </form>
+        {% endfor %}
+    </div>
+
+    <div class="ai-img-table-wrap">
+        <table class="ai-img-table" id="ai-img-table">
+            <thead>
+            <tr>
+                <th style="width:44px;">
+                    <input type="checkbox" id="asin-pick-all" class="asin-pick-checkbox" title="全选本页" aria-label="全选本页">
+                </th>
+                <th style="width:250px;">ASIN</th>
+                <th style="min-width:180px;">主图图需</th>
+                <th style="min-width:180px;">APlus图需</th>
+                <th style="width:350px;">原图</th>
+                <th style="width:350px;">成品图</th>
+                <th style="width:1%;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+            <tr data-asin="{{ row.asin }}" data-row-idx="{{ forloop.counter0 }}">
+                <td>
+                    <input type="checkbox" class="asin-pick-checkbox" value="{{ row.asin }}" aria-label="选择 {{ row.asin }}">
+                </td>
+                <td><strong style="color:#0071e3;">{{ row.asin }}</strong></td>
+                <td>
+                    <textarea class="ai-img-ta" name="main_image_requirements" form="ai-img-save-{{ forloop.counter0 }}" rows="8" placeholder="主图构图、文案、场景等要求">{{ row.main_image_requirements }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-img-ta" name="aplus_image_requirements" form="ai-img-save-{{ forloop.counter0 }}" rows="8" placeholder="A+ 模块图需、尺寸与文案等">{{ row.aplus_image_requirements }}</textarea>
+                </td>
+                <td class="ai-orig-col">
+                    <div class="ai-orig-cell" data-orig-cell>
+                        <div class="ai-orig-counts" data-orig-counts>
+                            主图-副图：<strong data-count-main>{{ row.original_main_count }}</strong> 张<br>
+                            A+ 图：<strong data-count-aplus>{{ row.original_aplus_count }}</strong> 张<br>
+                            产品原生图：<strong data-count-native>{{ row.original_native_count }}</strong> 张
+                        </div>
+                        <div class="ai-orig-mini-preview" data-orig-preview>
+                            {% for img in row.original_images.main|slice:":3" %}
+                            {% if img.url %}
+                            <img src="{{ img.url }}" alt="">
+                            {% elif img.path %}
+                            <img src="{{ media_url }}{{ img.path }}" alt="">
+                            {% endif %}
+                            {% endfor %}
+                            {% for img in row.original_images.aplus|slice:":2" %}
+                            {% if img.url %}
+                            <img src="{{ img.url }}" alt="">
+                            {% elif img.path %}
+                            <img src="{{ media_url }}{{ img.path }}" alt="">
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        <button type="button" class="btn-orig-expand" data-btn-orig-expand>展开原图</button>
+                    </div>
+                </td>
+                <td class="ai-finished-col">
+                    <div class="ai-orig-cell" data-fin-cell>
+                        <div class="ai-orig-counts" data-fin-counts>
+                            主图-副图：<strong data-fin-count-main>{{ row.finished_main_count }}</strong> 张<br>
+                            A+ 图：<strong data-fin-count-aplus>{{ row.finished_aplus_count }}</strong> 张<br>
+                            已优化：<strong data-fin-count-optimized>{{ row.finished_optimized_count }}</strong> 张
+                        </div>
+                        <div class="ai-orig-mini-preview" data-fin-preview>
+                            {% for img in row.finished_images.main|slice:":3" %}
+                            {% if img.url %}
+                            <img src="{{ img.url }}" alt="">
+                            {% elif img.path %}
+                            <img src="{{ media_url }}{{ img.path }}" alt="">
+                            {% endif %}
+                            {% endfor %}
+                            {% for img in row.finished_images.aplus|slice:":2" %}
+                            {% if img.url %}
+                            <img src="{{ img.url }}" alt="">
+                            {% elif img.path %}
+                            <img src="{{ media_url }}{{ img.path }}" alt="">
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        <button type="button" class="btn-orig-expand btn-fin-expand" data-btn-fin-expand>展开成品图</button>
+                    </div>
+                </td>
+                <td class="ai-img-save-cell">
+                    <div class="ai-img-actions">
+                        <button type="button" class="btn-row-fetch" data-btn-fetch-one>获取图片</button>
+                        <button type="button" class="btn-row-need btn-row-need-main" data-btn-main-need>主图图需</button>
+                        <button type="button" class="btn-row-need btn-row-need-aplus" data-btn-aplus-need>APlus图需</button>
+                        <button type="submit" class="btn-row-save" form="ai-img-save-{{ forloop.counter0 }}">保存</button>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7" style="padding:40px;text-align:center;color:#86868b;">暂无 ASIN，请先在「原文本」中导入数据。</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {{ original_images_by_asin|json_script:"ai-orig-images-by-asin" }}
+    {{ finished_images_by_asin|json_script:"ai-finished-images-by-asin" }}
+</div>
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="ai-img-pagination-bar" aria-label="列表分页">
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs align="end" %}
+</div>
+{% endif %}
+
+<!-- 原图悬浮窗 -->
+<div class="ai-orig-modal-backdrop" id="ai-orig-modal-backdrop" aria-hidden="true">
+    <div class="ai-orig-modal" role="dialog" aria-labelledby="ai-orig-modal-title">
+        <div class="ai-orig-modal-head">
+            <h3 id="ai-orig-modal-title">原图 · <span id="ai-orig-modal-asin"></span></h3>
+            <div class="ai-orig-modal-toolbar">
+                <button type="button" class="btn-modal" id="btn-orig-toggle-edit">编辑</button>
+                <button type="button" class="btn-modal btn-modal-danger" id="btn-orig-delete-selected" style="display:none;" disabled>删除</button>
+                <button type="button" class="btn-modal-close" id="btn-orig-modal-close" aria-label="关闭">&times;</button>
+            </div>
+        </div>
+        <div class="ai-orig-modal-body" id="ai-orig-modal-body">
+            <div class="ai-orig-section ai-orig-section-native" data-section="native">
+                <div class="ai-orig-section-title">
+                    <h4>产品原生图</h4>
+                    <span class="badge" id="modal-count-native">0 张</span>
+                </div>
+                <p style="margin:0 0 10px;font-size:0.8rem;color:#667085;">上传真实产品图，批量生图时用于替换主图/A+ 中的商品（场景与排版参考 Listing 原图）。</p>
+                <div class="ai-orig-grid" id="grid-native"></div>
+                <div class="ai-orig-section-upload">
+                    <input type="file" id="upload-native-files" accept="image/*" multiple>
+                    <button type="button" class="btn-modal btn-modal-primary" data-upload-section="native">上传到产品原生图</button>
+                </div>
+            </div>
+            <div class="ai-orig-section" data-section="main">
+                <div class="ai-orig-section-title">
+                    <h4>主图 - 副图</h4>
+                    <span class="badge" id="modal-count-main">0 张</span>
+                </div>
+                <div class="ai-orig-grid" id="grid-main"></div>
+                <div class="ai-orig-section-upload">
+                    <input type="file" id="upload-main-files" accept="image/*" multiple>
+                    <button type="button" class="btn-modal btn-modal-primary" data-upload-section="main">上传到主图-副图</button>
+                </div>
+            </div>
+            <div class="ai-orig-section" data-section="aplus">
+                <div class="ai-orig-section-title">
+                    <h4>A+ 图</h4>
+                    <span class="badge" id="modal-count-aplus">0 张</span>
+                </div>
+                <div class="ai-orig-grid" id="grid-aplus"></div>
+                <div class="ai-orig-section-upload">
+                    <input type="file" id="upload-aplus-files" accept="image/*" multiple>
+                    <button type="button" class="btn-modal btn-modal-primary" data-upload-section="aplus">上传到 A+ 图</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 成品图悬浮窗 -->
+<div class="ai-orig-modal-backdrop" id="ai-fin-modal-backdrop" aria-hidden="true">
+    <div class="ai-orig-modal" role="dialog">
+        <div class="ai-orig-modal-head">
+            <h3>成品图 · <span id="ai-fin-modal-asin"></span></h3>
+            <div class="ai-orig-modal-toolbar">
+                <button type="button" class="btn-modal-accent" id="btn-fin-open-optimize">图片优化</button>
+                <button type="button" class="btn-modal" id="btn-fin-toggle-edit">编辑</button>
+                <button type="button" class="btn-modal" id="btn-fin-select-all" style="display:none;">全选</button>
+                <button type="button" class="btn-modal" id="btn-fin-select-none" style="display:none;">取消全选</button>
+                <button type="button" class="btn-modal btn-modal-primary" id="btn-fin-save-selected" style="display:none;" disabled>保存</button>
+                <button type="button" class="btn-modal btn-modal-danger" id="btn-fin-delete-selected" style="display:none;" disabled>删除</button>
+                <button type="button" class="btn-modal-close" id="btn-fin-modal-close" aria-label="关闭">&times;</button>
+            </div>
+        </div>
+        <div class="ai-orig-modal-body">
+            <div class="ai-orig-section">
+                <div class="ai-orig-section-title"><h4>主图 - 副图</h4><span class="badge" id="fin-modal-count-main">0 张</span></div>
+                <div class="ai-orig-grid" id="fin-grid-main"></div>
+                <div class="ai-orig-section-upload">
+                    <input type="file" id="fin-upload-main-files" accept="image/*" multiple>
+                    <button type="button" class="btn-modal btn-modal-primary" data-fin-upload-section="main">上传到主图-副图</button>
+                </div>
+            </div>
+            <div class="ai-orig-section">
+                <div class="ai-orig-section-title"><h4>A+ 图</h4><span class="badge" id="fin-modal-count-aplus">0 张</span></div>
+                <div class="ai-orig-grid" id="fin-grid-aplus"></div>
+                <div class="ai-orig-section-upload">
+                    <input type="file" id="fin-upload-aplus-files" accept="image/*" multiple>
+                    <button type="button" class="btn-modal btn-modal-primary" data-fin-upload-section="aplus">上传到 A+ 图</button>
+                </div>
+                <div class="ai-orig-subsection">
+                    <div class="ai-orig-section-title"><h4>已优化图</h4><span class="badge" id="fin-modal-count-optimized">0 张</span></div>
+                    <div class="ai-orig-grid" id="fin-grid-optimized"></div>
+                    <div class="ai-orig-section-upload">
+                        <input type="file" id="fin-upload-optimized-files" accept="image/*" multiple>
+                        <button type="button" class="btn-modal btn-modal-primary" data-fin-upload-section="optimized">上传到已优化图</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 成品图 AI 优化 -->
+<div class="ai-orig-modal-backdrop" id="ai-fin-opt-modal-backdrop" aria-hidden="true">
+    <div class="ai-orig-modal ai-fin-opt-modal" role="dialog" style="width: 1920px">
+        <div class="ai-orig-modal-head">
+            <h3>图片优化 · <span id="ai-fin-opt-modal-asin"></span></h3>
+            <button type="button" class="btn-modal-close" id="btn-fin-opt-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="ai-orig-modal-body">
+            <div class="ai-fin-opt-step">
+                <h4>1. 选择要优化的成品图（可多选，来自主图-副图 / A+ 图）</h4>
+                <div class="ai-fin-opt-grid" id="fin-opt-pick-grid"></div>
+            </div>
+            <div class="ai-fin-opt-step">
+                <h4>2. 输入优化内容与方案</h4>
+                <textarea id="fin-opt-plan-input" class="ai-fin-opt-ta" placeholder="例如：增强产品质感、调整背景为纯白、突出卖点文字区域、修正色彩偏差等。"></textarea>
+            </div>
+            <div id="fin-opt-loading-bar" class="ai-fin-opt-loading" aria-live="polite">
+                <div class="ai-fin-opt-loading-inner">
+                    <span class="ai-fin-opt-spinner" aria-hidden="true"></span>
+                    <span id="fin-opt-loading-text">正在调用 AI 优化图片，请稍候（约 30–120 秒）…</span>
+                </div>
+            </div>
+        </div>
+        <div class="ai-fin-opt-actions">
+            <button type="button" class="btn-modal" id="btn-fin-opt-cancel">取消</button>
+            <button type="button" class="btn-modal btn-modal-primary" id="btn-fin-opt-submit">开始优化</button>
+        </div>
+    </div>
+</div>
+
+<!-- 选中 ASIN 图需预览 -->
+<div class="ai-orig-modal-backdrop" id="ai-need-modal-backdrop" aria-hidden="true">
+    <div class="ai-orig-modal" role="dialog" style="width:min(1960px,100%);">
+        <div class="ai-orig-modal-head">
+            <h3>已选 ASIN 图需详情</h3>
+            <button type="button" class="btn-modal-close" id="btn-need-modal-close" aria-label="关闭">&times;</button>
+        </div>
+        <div class="ai-md-modal-body" id="ai-need-modal-body"></div>
+    </div>
+</div>
+
+<div class="ai-fetch-toast" id="ai-fetch-toast"></div>
+
+<div id="form-ai-image-dock" class="ai-img-dock">
+    <div class="ai-img-dock-head">
+        <div>
+            <h3>AI 生图</h3>
+            <div class="ai-img-dock-meta">
+                勾选表格中一个或多个 ASIN 后，<strong>批量生成图需</strong>或点下方生图。
+                <span id="dock-selected-count" style="display:block;margin-top:4px;color:#175cd3;font-weight:600;">未选择 ASIN</span>
+            </div>
+        </div>
+        <button type="button" class="btn-dock-toggle" id="dock-toggle-expand" aria-expanded="true">收起</button>
+    </div>
+    <div class="ai-img-dock-body" id="dock-body">
+        <div class="ai-gen-mode">
+            <label><input type="radio" name="ai_gen_mode" id="ai_gen_mode_batch" value="batch" checked> 批量生图</label>
+            <label><input type="radio" name="ai_gen_mode" id="ai_gen_mode_single" value="single"> 单模块生图</label>
+        </div>
+        <div id="dock-batch-panel">
+            <label for="user_notes" class="ai-dock-field-label">补充说明（可选，会追加到各模块生图提示）</label>
+            <textarea id="user_notes" placeholder="例如：产品边缘更清晰、白底更纯净等。默认策略：用产品原生图替换 Listing 图中的商品，场景与排版不变。"></textarea>
+        </div>
+        <div id="dock-single-panel" class="dock-single-panel">
+            <label for="single_module_section" class="ai-dock-field-label">目标分区</label>
+            <select id="single_module_section">
+                <option value="main">主图-副图</option>
+                <option value="aplus">A+ 图</option>
+            </select>
+            <label for="single_module_prompt" class="ai-dock-field-label">模块图需（必填，建议以 ## 模块名 开头，仅一个模块）</label>
+            <textarea id="single_module_prompt" placeholder="例如：&#10;## 主图&#10;recommended composition：正面微俯视15°&#10;white background requirements：纯白底&#10;..."></textarea>
+            <label for="single_user_notes" class="ai-dock-field-label" style="margin-top:8px;">补充说明（可选）</label>
+            <textarea id="single_user_notes" style="width:100%;min-height:56px;resize:vertical;border:1px solid #d0d5dd;border-radius:10px;padding:8px 12px;font-size:0.85rem;box-sizing:border-box;" placeholder="追加到本次模块生图提示"></textarea>
+        </div>
+        <div class="ai-img-dock-actions">
+            <button type="button" class="btn-dock-view-need" id="btn-dock-view-need">查看选中图需</button>
+            <button type="button" class="btn-dock-submit" id="dock-submit-btn">批量开始生图</button>
+            <button type="button" class="btn-dock-submit-secondary" id="dock-single-submit-btn" style="display:none;">单模块生图</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    var MEDIA_URL = "{{ media_url|escapejs }}";
+    var FETCH_URL = "{% url 'ai_image_fetch_images' %}";
+    var SAVE_URL = "{% url 'ai_image_save_original_json' %}";
+    var UPLOAD_URL = "{% url 'ai_image_upload_original_json' %}";
+    var GENERATE_NEED_URL = "{% url 'ai_image_generate_need' %}";
+    var IMAGES_PER_MODULE = {{ images_per_module|default:3 }};
+    var PARALLEL_WORKERS = {{ parallel_workers|default:6 }};
+    var GENERATE_ALL_URL = "{% url 'ai_image_generate_all' %}";
+    var GENERATE_WAVE_URL = "{% url 'ai_image_generate_wave' %}";
+    var RUN_JOB_URL = "{% url 'ai_image_run_generation_job' %}";
+    var RUN_JOBS_BATCH_URL = "{% url 'ai_image_run_jobs_batch' %}";
+    var FETCH_TIMEOUT_MS = 600000;
+    var GENERATE_PLAN_URL = "{% url 'ai_image_generate_plan' %}";
+    var GENERATE_MODULE_URL = "{% url 'ai_image_generate_module' %}";
+    var RUN_CUSTOM_MODULE_URL = "{% url 'ai_image_run_custom_module' %}";
+    var TOPUP_MODULES_URL = "{% url 'ai_image_topup_modules' %}";
+    var TOPUP_CHUNK_URL = "{% url 'ai_image_topup_chunk' %}";
+    var SAVE_FIN_URL = "{% url 'ai_image_save_finished_json' %}";
+    var UPLOAD_FIN_URL = "{% url 'ai_image_upload_finished_json' %}";
+    var OPTIMIZE_FIN_URL = "{% url 'ai_image_optimize_finished' %}";
+    var DOWNLOAD_FIN_URL = "{% url 'ai_image_download_finished' %}";
+
+    var AI_ORIG_MAP = {};
+    (function loadOrigMap() {
+        var el = document.getElementById('ai-orig-images-by-asin');
+        if (!el) return;
+        try {
+            AI_ORIG_MAP = JSON.parse(el.textContent || '{}');
+        } catch (e) {
+            AI_ORIG_MAP = {};
+        }
+    })();
+
+    var AI_FIN_MAP = {};
+    (function loadFinMap() {
+        var el = document.getElementById('ai-finished-images-by-asin');
+        if (!el) return;
+        try {
+            AI_FIN_MAP = JSON.parse(el.textContent || '{}');
+        } catch (e) {
+            AI_FIN_MAP = {};
+        }
+    })();
+
+    syncAllRowImageCells();
+
+    var rowStateTimers = {};
+
+    function csrfToken() {
+        var el = document.querySelector('[name=csrfmiddlewaretoken]');
+        return el ? el.value : '';
+    }
+
+    function showToast(msg, isError) {
+        var t = document.getElementById('ai-fetch-toast');
+        if (!t) return;
+        t.textContent = msg;
+        t.className = 'ai-fetch-toast show' + (isError ? ' error' : '');
+        clearTimeout(t._hideTimer);
+        t._hideTimer = setTimeout(function () { t.classList.remove('show'); }, 5000);
+    }
+
+    function dismissPageFlashMessages() {
+        document.querySelectorAll('.ai-page-flash').forEach(function (el) {
+            setTimeout(function () {
+                el.style.transition = 'opacity 0.3s ease';
+                el.style.opacity = '0';
+                setTimeout(function () {
+                    el.remove();
+                    var wrap = document.getElementById('ai-page-messages');
+                    if (wrap && !wrap.children.length) wrap.remove();
+                }, 300);
+            }, 5000);
+        });
+    }
+    dismissPageFlashMessages();
+
+    function itemKey(item) {
+        return (item.url || item.path || '').trim();
+    }
+
+    function itemSrc(item) {
+        if (item.url) return item.url;
+        if (!item.path) return '';
+        var p = item.path;
+        if (p.indexOf('http://') === 0 || p.indexOf('https://') === 0) return p;
+        var base = MEDIA_URL.endsWith('/') ? MEDIA_URL : MEDIA_URL + '/';
+        return base + p.replace(/^\//, '');
+    }
+
+    function asinKeyFromTr(tr) {
+        return (tr.getAttribute('data-asin') || '').trim().toUpperCase();
+    }
+
+    function findTrByAsin(asin) {
+        var key = (asin || '').trim().toUpperCase();
+        var found = null;
+        document.querySelectorAll('#ai-img-table tbody tr[data-asin]').forEach(function (tr) {
+            if (asinKeyFromTr(tr) === key) found = tr;
+        });
+        return found;
+    }
+
+    function getSelectedAsins() {
+        var asins = [];
+        document.querySelectorAll('#ai-img-table tbody .asin-pick-checkbox:checked').forEach(function (cb) {
+            if (cb.value) asins.push(cb.value);
+        });
+        return asins;
+    }
+
+    function requireSelectedAsins() {
+        var asins = getSelectedAsins();
+        if (!asins.length) {
+            showToast('请先勾选至少一个 ASIN', true);
+            return null;
+        }
+        return asins;
+    }
+
+    function updateSelectionUi() {
+        var asins = getSelectedAsins();
+        var n = asins.length;
+        var dockCount = document.getElementById('dock-selected-count');
+        var toolbarHint = document.getElementById('toolbar-selected-hint');
+        if (dockCount) {
+            dockCount.textContent = n ? ('已选择 ' + n + ' 个 ASIN：' + asins.join(', ')) : '未选择 ASIN';
+        }
+        if (toolbarHint) {
+            toolbarHint.textContent = n ? ('已选 ' + n + ' 个 ASIN') : '请先勾选表格中的 ASIN';
+        }
+        document.querySelectorAll('#ai-img-table tbody tr[data-asin]').forEach(function (tr) {
+            var cb = tr.querySelector('.asin-pick-checkbox');
+            if (cb && cb.checked) tr.classList.add('row-selected');
+            else tr.classList.remove('row-selected');
+        });
+        var pickAll = document.getElementById('asin-pick-all');
+        var rowCbs = document.querySelectorAll('#ai-img-table tbody .asin-pick-checkbox');
+        if (pickAll && rowCbs.length) {
+            pickAll.checked = n > 0 && n === rowCbs.length;
+            pickAll.indeterminate = n > 0 && n < rowCbs.length;
+        }
+    }
+
+    function bindAsinPickHandlers() {
+        document.querySelectorAll('#ai-img-table tbody .asin-pick-checkbox').forEach(function (cb) {
+            cb.addEventListener('change', updateSelectionUi);
+        });
+        var pickAll = document.getElementById('asin-pick-all');
+        if (pickAll) {
+            pickAll.addEventListener('change', function () {
+                var checked = pickAll.checked;
+                document.querySelectorAll('#ai-img-table tbody .asin-pick-checkbox').forEach(function (cb) {
+                    cb.checked = checked;
+                });
+                updateSelectionUi();
+            });
+        }
+        updateSelectionUi();
+    }
+    bindAsinPickHandlers();
+
+    function parseOrigData(tr) {
+        var key = asinKeyFromTr(tr);
+        var data = AI_ORIG_MAP[key];
+        if (!data || typeof data !== 'object') return { main: [], aplus: [], native: [] };
+        return {
+            main: Array.isArray(data.main) ? data.main.slice() : [],
+            aplus: Array.isArray(data.aplus) ? data.aplus.slice() : [],
+            native: Array.isArray(data.native) ? data.native.slice() : []
+        };
+    }
+
+    function setOrigJson(tr, data) {
+        var key = asinKeyFromTr(tr);
+        if (key) AI_ORIG_MAP[key] = data;
+    }
+
+    function updateOrigCell(tr, data) {
+        setOrigJson(tr, data);
+        var mainN = (data.main || []).length;
+        var aplusN = (data.aplus || []).length;
+        var nativeN = (data.native || []).length;
+        var cm = tr.querySelector('[data-count-main]');
+        var ca = tr.querySelector('[data-count-aplus]');
+        var cn = tr.querySelector('[data-count-native]');
+        if (cm) cm.textContent = String(mainN);
+        if (ca) ca.textContent = String(aplusN);
+        if (cn) cn.textContent = String(nativeN);
+        var preview = tr.querySelector('[data-orig-preview]');
+        if (preview) {
+            preview.innerHTML = '';
+            var all = (data.native || []).slice(0, 1).concat((data.main || []).slice(0, 2)).concat((data.aplus || []).slice(0, 2));
+            all.forEach(function (item) {
+                var src = itemSrc(item);
+                if (!src) return;
+                var img = document.createElement('img');
+                img.src = src;
+                img.alt = '';
+                preview.appendChild(img);
+            });
+        }
+    }
+
+    function updateNeedTextarea(tr, field, text) {
+        var ta = tr.querySelector('textarea[name="' + field + '"]');
+        if (ta) ta.value = text || '';
+    }
+
+    function setRowTaskState(asin, state) {
+        var tr = findTrByAsin(asin);
+        if (!tr) return;
+        var key = (asin || '').trim().toUpperCase();
+        if (rowStateTimers[key]) {
+            clearTimeout(rowStateTimers[key]);
+            delete rowStateTimers[key];
+        }
+        tr.classList.remove('row-processing', 'row-done', 'row-fail');
+        if (state) tr.classList.add(state);
+        if (state === 'row-done' || state === 'row-fail') {
+            rowStateTimers[key] = setTimeout(function () {
+                tr.classList.remove('row-done', 'row-fail');
+                delete rowStateTimers[key];
+            }, 10000);
+        }
+    }
+
+    function parseFinData(tr) {
+        var key = asinKeyFromTr(tr);
+        var data = AI_FIN_MAP[key];
+        if (!data || typeof data !== 'object') return { main: [], aplus: [], optimized: [] };
+        return {
+            main: Array.isArray(data.main) ? data.main.slice() : [],
+            aplus: Array.isArray(data.aplus) ? data.aplus.slice() : [],
+            optimized: Array.isArray(data.optimized) ? data.optimized.slice() : []
+        };
+    }
+
+    function setFinJson(tr, data) {
+        var key = asinKeyFromTr(tr);
+        if (key) AI_FIN_MAP[key] = data;
+    }
+
+    /** 从接口响应中解析成品图结构 */
+    function extractFinishedImages(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+        if (payload.finished_images_all && typeof payload.finished_images_all === 'object') {
+            return payload.finished_images_all;
+        }
+        if (payload.finished_images && typeof payload.finished_images === 'object') {
+            return payload.finished_images;
+        }
+        if (payload.data && typeof payload.data === 'object') {
+            var d = payload.data;
+            if (Array.isArray(d.main) || Array.isArray(d.aplus) || Array.isArray(d.optimized)) {
+                return {
+                    main: d.main || [],
+                    aplus: d.aplus || [],
+                    optimized: d.optimized || []
+                };
+            }
+        }
+        if (Array.isArray(payload.main) || Array.isArray(payload.aplus) || Array.isArray(payload.optimized)) {
+            return {
+                main: payload.main || [],
+                aplus: payload.aplus || [],
+                optimized: payload.optimized || []
+            };
+        }
+        return null;
+    }
+
+    function extractOriginalImages(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+        if (payload.data && typeof payload.data === 'object') {
+            var d = payload.data;
+            if (Array.isArray(d.main) || Array.isArray(d.aplus) || Array.isArray(d.native)) {
+                return {
+                    main: d.main || [],
+                    aplus: d.aplus || [],
+                    native: d.native || []
+                };
+            }
+        }
+        if (Array.isArray(payload.main) || Array.isArray(payload.aplus) || Array.isArray(payload.native)) {
+            return {
+                main: payload.main || [],
+                aplus: payload.aplus || [],
+                native: payload.native || []
+            };
+        }
+        return null;
+    }
+
+    function updateFinCell(tr, data) {
+        if (!tr || !data) return;
+        setFinJson(tr, data);
+        var mainN = (data.main || []).length;
+        var aplusN = (data.aplus || []).length;
+        var optN = (data.optimized || []).length;
+        var cm = tr.querySelector('[data-fin-count-main]');
+        var ca = tr.querySelector('[data-fin-count-aplus]');
+        var co = tr.querySelector('[data-fin-count-optimized]');
+        if (cm) cm.textContent = String(mainN);
+        if (ca) ca.textContent = String(aplusN);
+        if (co) co.textContent = String(optN);
+        var preview = tr.querySelector('[data-fin-preview]');
+        if (preview) {
+            preview.innerHTML = '';
+            var thumbs = (data.main || []).slice(0, 3)
+                .concat((data.aplus || []).slice(0, 2))
+                .concat((data.optimized || []).slice(0, 1));
+            thumbs.forEach(function (item) {
+                var src = itemSrc(item);
+                if (!src) return;
+                var img = document.createElement('img');
+                img.src = src;
+                img.alt = '';
+                preview.appendChild(img);
+            });
+        }
+    }
+
+    function refreshRowImageCells(tr) {
+        if (!tr) return;
+        updateOrigCell(tr, parseOrigData(tr));
+        updateFinCell(tr, parseFinData(tr));
+    }
+
+    function syncAllRowImageCells() {
+        document.querySelectorAll('#ai-img-table tbody tr[data-asin]').forEach(function (tr) {
+            refreshRowImageCells(tr);
+        });
+    }
+
+    function renderMarkdown(md) {
+        if (window.marked && typeof window.marked.parse === 'function') {
+            return window.marked.parse(md || '');
+        }
+        return '<pre style="white-space:pre-wrap;margin:0;">' + (md || '').replace(/</g, '&lt;') + '</pre>';
+    }
+
+    function openNeedPreviewModal() {
+        var asins = requireSelectedAsins();
+        if (!asins) return;
+        var body = document.getElementById('ai-need-modal-body');
+        if (!body) return;
+        body.innerHTML = '';
+        asins.forEach(function (asin) {
+            var tr = findTrByAsin(asin);
+            if (!tr) return;
+            var mainMd = (tr.querySelector('textarea[name="main_image_requirements"]') || {}).value || '';
+            var aplusMd = (tr.querySelector('textarea[name="aplus_image_requirements"]') || {}).value || '';
+            var block = document.createElement('div');
+            block.className = 'ai-md-asin-block';
+            block.innerHTML =
+                '<h4>ASIN：' + asin + '</h4>' +
+                '<p style="margin:0 0 8px;font-weight:600;color:#667085;">主图图需</p>' +
+                '<div class="ai-md-content">' + (mainMd ? renderMarkdown(mainMd) : '<p class="ai-md-empty">暂无</p>') + '</div>' +
+                '<p style="margin:12px 0 8px;font-weight:600;color:#667085;">APlus 图需</p>' +
+                '<div class="ai-md-content">' + (aplusMd ? renderMarkdown(aplusMd) : '<p class="ai-md-empty">暂无</p>') + '</div>';
+            body.appendChild(block);
+        });
+        document.getElementById('ai-need-modal-backdrop').classList.add('open');
+    }
+
+    function postForm(url, body, timeoutMs) {
+        var ms = timeoutMs || 120000;
+        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var timer = controller ? setTimeout(function () {
+            controller.abort();
+        }, ms) : null;
+        var opts = {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken() },
+            body: body,
+            credentials: 'same-origin'
+        };
+        if (controller) opts.signal = controller.signal;
+        return fetch(url, opts).then(function (r) {
+            return r.json().then(function (j) {
+                return { httpOk: r.ok, data: j };
+            });
+        }).finally(function () {
+            if (timer) clearTimeout(timer);
+        });
+    }
+
+    /** 逐个 ASIN 执行，完成一个立即更新页面 */
+    function runBatchSequential(asins, runOne, options) {
+        options = options || {};
+        var label = options.label || '处理中';
+        var btn = options.btn;
+        var okCount = 0;
+        var errors = [];
+        var idx = 0;
+        if (btn) btn.disabled = true;
+
+        function finish() {
+            if (btn) btn.disabled = false;
+            var msg = label + '结束：成功 ' + okCount + ' / ' + asins.length;
+            if (errors.length) msg += '；失败 ' + errors.length + ' 个';
+            showToast(msg, okCount === 0);
+            if (options.useProgress && window.AiGenProgress) {
+                AiGenProgress.finish(msg);
+            }
+        }
+
+        function step() {
+            if (idx >= asins.length) {
+                finish();
+                return Promise.resolve();
+            }
+            var asin = asins[idx];
+            var cur = idx + 1;
+            idx += 1;
+            setRowTaskState(asin, 'row-processing');
+            showToast(label + ' ' + cur + '/' + asins.length + '：' + asin, false);
+            return Promise.resolve(runOne(asin, cur, asins.length))
+                .then(function (result) {
+                    result = result || {};
+                    if (result.ok) {
+                        okCount += 1;
+                        setRowTaskState(asin, result.partial ? 'row-done' : 'row-done');
+                        if (result.message) showToast(result.message, !!result.partial);
+                    } else {
+                        errors.push((result.error || '失败'));
+                        setRowTaskState(asin, 'row-fail');
+                    }
+                })
+                .catch(function () {
+                    errors.push('网络错误');
+                    setRowTaskState(asin, 'row-fail');
+                })
+                .then(step);
+        }
+        return step();
+    }
+
+    function applyFetchResult(asin, block) {
+        var tr = findTrByAsin(asin);
+        if (!tr || !block) return;
+        var key = (asin || '').trim().toUpperCase();
+        var prev = parseOrigData(tr);
+        var payload = {
+            main: block.main || [],
+            aplus: block.aplus || [],
+            native: prev.native || []
+        };
+        setOrigJson(tr, payload);
+        updateOrigCell(tr, payload);
+        updateFinCell(tr, parseFinData(tr));
+        if (modalState.open && (modalState.asin === asin || modalState.asin === key)) {
+            modalState.data = payload;
+            renderModalGrids();
+        }
+    }
+
+    function fetchImagesOne(asin) {
+        var body = new FormData();
+        body.append('asins', JSON.stringify([asin]));
+        return postForm(FETCH_URL, body).then(function (res) {
+            var data = res.data || {};
+            if (data.ok && data.results) {
+                var key = (asin || '').trim().toUpperCase();
+                var block = data.results[asin] || data.results[key];
+                if (block) {
+                    applyFetchResult(asin, block);
+                    return { ok: true };
+                }
+            }
+            var err = data.error || (data.errors && data.errors[0]) || '未返回图片';
+            return { ok: false, error: err };
+        }).catch(function () {
+            return { ok: false, error: '网络错误' };
+        });
+    }
+
+    function fetchImages(asins, btn) {
+        if (!asins.length) {
+            showToast('没有可获取的 ASIN', true);
+            return Promise.resolve();
+        }
+        if (asins.length === 1) {
+            if (btn) btn.disabled = true;
+            return fetchImagesOne(asins[0]).then(function (r) {
+                setRowTaskState(asins[0], r.ok ? 'row-done' : 'row-fail');
+                showToast(r.ok ? asins[0] + ' 图片已获取' : (asins[0] + '：' + r.error), !r.ok);
+            }).finally(function () { if (btn) btn.disabled = false; });
+        }
+        return runBatchSequential(asins, function (asin) {
+            return fetchImagesOne(asin);
+        }, { label: '获取图片', btn: btn });
+    }
+
+    function generateImageNeedOne(asin, kind) {
+        var body = new FormData();
+        body.append('kind', kind);
+        body.append('asins', JSON.stringify([asin]));
+        return postForm(GENERATE_NEED_URL, body).then(function (res) {
+            var data = res.data || {};
+            var field = data.field || (kind === 'main' ? 'main_image_requirements' : 'aplus_image_requirements');
+            if (data.ok && data.results) {
+                var key = (asin || '').trim().toUpperCase();
+                var block = data.results[asin] || data.results[key];
+                if (block && block.text) {
+                    var tr = findTrByAsin(asin);
+                    if (tr) updateNeedTextarea(tr, field, block.text);
+                    return { ok: true };
+                }
+            }
+            var err = data.error || (data.errors && data.errors[0]) || '生成失败';
+            return { ok: false, error: err };
+        }).catch(function () {
+            return { ok: false, error: '网络错误' };
+        });
+    }
+
+    function generateImageNeed(kind, asins, btn) {
+        if (!asins.length) {
+            showToast('没有可分析的 ASIN', true);
+            return Promise.resolve();
+        }
+        var label = kind === 'main' ? '主图图需' : 'APlus图需';
+        if (asins.length === 1) {
+            if (btn) btn.disabled = true;
+            return generateImageNeedOne(asins[0], kind).then(function (r) {
+                setRowTaskState(asins[0], r.ok ? 'row-done' : 'row-fail');
+                showToast(r.ok ? (asins[0] + ' ' + label + '已生成') : (asins[0] + '：' + r.error), !r.ok);
+            }).finally(function () { if (btn) btn.disabled = false; });
+        }
+        return runBatchSequential(asins, function (asin) {
+            return generateImageNeedOne(asin, kind);
+        }, { label: label, btn: btn });
+    }
+
+    document.getElementById('btn-batch-main-need').addEventListener('click', function () {
+        var asins = requireSelectedAsins();
+        if (asins) generateImageNeed('main', asins, this);
+    });
+
+    document.getElementById('btn-batch-aplus-need').addEventListener('click', function () {
+        var asins = requireSelectedAsins();
+        if (asins) generateImageNeed('aplus', asins, this);
+    });
+
+    document.querySelectorAll('[data-btn-main-need]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (!tr) return;
+            generateImageNeed('main', [tr.getAttribute('data-asin')], btn);
+        });
+    });
+
+    document.querySelectorAll('[data-btn-aplus-need]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (!tr) return;
+            generateImageNeed('aplus', [tr.getAttribute('data-asin')], btn);
+        });
+    });
+
+    document.getElementById('btn-batch-fetch-images').addEventListener('click', function () {
+        var asins = requireSelectedAsins();
+        if (asins) fetchImages(asins, this);
+    });
+
+    document.querySelectorAll('[data-btn-fetch-one]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (!tr) return;
+            fetchImages([tr.getAttribute('data-asin')], btn);
+        });
+    });
+
+    /* 原图弹窗 */
+    var backdrop = document.getElementById('ai-orig-modal-backdrop');
+    var modalEl = backdrop.querySelector('.ai-orig-modal');
+    var btnOrigEdit = document.getElementById('btn-orig-toggle-edit');
+    var btnOrigDelete = document.getElementById('btn-orig-delete-selected');
+    var modalState = {
+        open: false,
+        asin: '',
+        data: { main: [], aplus: [], native: [] },
+        saving: false,
+        editMode: false,
+        selectedKeys: {}
+    };
+
+    function selectedKeyCount() {
+        return Object.keys(modalState.selectedKeys).length;
+    }
+
+    function updateDeleteBtnState() {
+        if (!btnOrigDelete) return;
+        var n = selectedKeyCount();
+        btnOrigDelete.disabled = n === 0;
+        btnOrigDelete.textContent = n > 0 ? ('删除 (' + n + ')') : '删除';
+    }
+
+    function setEditMode(on) {
+        modalState.editMode = !!on;
+        if (!on) modalState.selectedKeys = {};
+        if (modalEl) {
+            if (modalState.editMode) modalEl.classList.add('edit-mode');
+            else modalEl.classList.remove('edit-mode');
+        }
+        if (btnOrigEdit) btnOrigEdit.textContent = modalState.editMode ? '取消编辑' : '编辑';
+        if (btnOrigDelete) btnOrigDelete.style.display = modalState.editMode ? '' : 'none';
+        updateDeleteBtnState();
+        renderModalGrids();
+    }
+
+    function saveOriginalImages(done) {
+        var body = new FormData();
+        body.append('asin', modalState.asin);
+        body.append('original_images_json', JSON.stringify(modalState.data));
+        modalState.saving = true;
+        return fetch(SAVE_URL, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken() },
+            body: body,
+            credentials: 'same-origin'
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (!res.ok) {
+                showToast(res.error || '保存失败', true);
+                return false;
+            }
+            var tr = findTrByAsin(modalState.asin);
+            var merged = extractOriginalImages(res) || modalState.data;
+            modalState.data = merged;
+            if (tr) {
+                setOrigJson(tr, merged);
+                updateOrigCell(tr, merged);
+                updateFinCell(tr, parseFinData(tr));
+            }
+            if (typeof done === 'function') done(true);
+            return true;
+        })
+        .catch(function () {
+            showToast('保存失败', true);
+            if (typeof done === 'function') done(false);
+            return false;
+        })
+        .finally(function () { modalState.saving = false; });
+    }
+
+    function deleteSelectedImages() {
+        if (modalState.saving) return;
+        var keys = modalState.selectedKeys;
+        var n = selectedKeyCount();
+        if (!n) {
+            showToast('请先勾选要删除的图片', true);
+            return;
+        }
+        if (!confirm('确定删除已选中的 ' + n + ' 张图片吗？')) return;
+        function filterItems(items) {
+            return (items || []).filter(function (it) { return !keys[itemKey(it)]; });
+        }
+        modalState.data = {
+            main: filterItems(modalState.data.main),
+            aplus: filterItems(modalState.data.aplus),
+            native: filterItems(modalState.data.native || [])
+        };
+        btnOrigDelete.disabled = true;
+        saveOriginalImages(function (ok) {
+            if (ok) {
+                setEditMode(false);
+                showToast('已删除 ' + n + ' 张图片', false);
+            } else if (btnOrigDelete) {
+                updateDeleteBtnState();
+            }
+        });
+    }
+
+    function renderModalGrids() {
+        var data = modalState.data;
+        document.getElementById('modal-count-main').textContent = (data.main || []).length + ' 张';
+        document.getElementById('modal-count-aplus').textContent = (data.aplus || []).length + ' 张';
+        var countNative = document.getElementById('modal-count-native');
+        if (countNative) countNative.textContent = (data.native || []).length + ' 张';
+
+        function fillGrid(gridId, section, items) {
+            var grid = document.getElementById(gridId);
+            grid.innerHTML = '';
+            if (!items || !items.length) {
+                grid.innerHTML = '<div class="ai-orig-empty-section" style="grid-column:1/-1;">暂无图片，可点击「获取图片」或上传</div>';
+                return;
+            }
+            items.forEach(function (item) {
+                var key = itemKey(item);
+                var src = itemSrc(item);
+                if (!src) return;
+                var wrap = document.createElement('div');
+                wrap.className = 'ai-orig-grid-item';
+                wrap.setAttribute('data-key', key);
+                wrap.setAttribute('data-section', section);
+                var img = document.createElement('img');
+                img.src = src;
+                img.alt = '';
+                var chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.className = 'orig-pick-check';
+                chk.title = '选中删除';
+                if (modalState.selectedKeys[key]) {
+                    chk.checked = true;
+                    wrap.classList.add('is-pick-selected');
+                }
+                chk.addEventListener('change', function (e) {
+                    e.stopPropagation();
+                    if (chk.checked) {
+                        modalState.selectedKeys[key] = true;
+                        wrap.classList.add('is-pick-selected');
+                    } else {
+                        delete modalState.selectedKeys[key];
+                        wrap.classList.remove('is-pick-selected');
+                    }
+                    updateDeleteBtnState();
+                });
+                chk.addEventListener('click', function (e) { e.stopPropagation(); });
+                var link = document.createElement('a');
+                link.href = src;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.className = 'img-open-link';
+                link.textContent = '查看';
+                wrap.appendChild(img);
+                wrap.appendChild(chk);
+                wrap.appendChild(link);
+                if (modalState.editMode) {
+                    wrap.addEventListener('click', function (e) {
+                        if (e.target === chk || e.target === link) return;
+                        chk.checked = !chk.checked;
+                        chk.dispatchEvent(new Event('change'));
+                    });
+                }
+                grid.appendChild(wrap);
+            });
+        }
+        fillGrid('grid-native', 'native', data.native);
+        fillGrid('grid-main', 'main', data.main);
+        fillGrid('grid-aplus', 'aplus', data.aplus);
+    }
+
+    function openOrigModal(tr) {
+        modalState.asin = asinKeyFromTr(tr) || tr.getAttribute('data-asin');
+        modalState.data = parseOrigData(tr);
+        document.getElementById('ai-orig-modal-asin').textContent = modalState.asin;
+        setEditMode(false);
+        backdrop.classList.add('open');
+        backdrop.setAttribute('aria-hidden', 'false');
+        modalState.open = true;
+        renderModalGrids();
+    }
+
+    function closeOrigModal() {
+        setEditMode(false);
+        backdrop.classList.remove('open');
+        backdrop.setAttribute('aria-hidden', 'true');
+        modalState.open = false;
+    }
+
+    document.querySelectorAll('[data-btn-orig-expand]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (tr) openOrigModal(tr);
+        });
+    });
+
+    document.getElementById('btn-orig-modal-close').addEventListener('click', closeOrigModal);
+    backdrop.addEventListener('click', function (e) {
+        if (e.target === backdrop) closeOrigModal();
+    });
+
+    if (btnOrigEdit) {
+        btnOrigEdit.addEventListener('click', function () {
+            setEditMode(!modalState.editMode);
+        });
+    }
+    if (btnOrigDelete) {
+        btnOrigDelete.addEventListener('click', deleteSelectedImages);
+    }
+
+    document.querySelectorAll('[data-upload-section]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var section = btn.getAttribute('data-upload-section');
+            var inputId = section === 'main' ? 'upload-main-files'
+                : section === 'aplus' ? 'upload-aplus-files'
+                : 'upload-native-files';
+            var input = document.getElementById(inputId);
+            if (!input || !input.files.length) {
+                showToast('请先选择图片文件', true);
+                return;
+            }
+            var body = new FormData();
+            body.append('asin', modalState.asin);
+            body.append('image_section', section);
+            for (var i = 0; i < input.files.length; i++) {
+                body.append('images', input.files[i]);
+            }
+            btn.disabled = true;
+            fetch(UPLOAD_URL, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken() },
+                body: body,
+                credentials: 'same-origin'
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (!res.ok) {
+                    showToast(res.error || '上传失败', true);
+                    return;
+                }
+                var merged = extractOriginalImages(res) || modalState.data;
+                modalState.data = merged;
+                var tr = findTrByAsin(modalState.asin);
+                if (tr) {
+                    setOrigJson(tr, merged);
+                    updateOrigCell(tr, merged);
+                    updateFinCell(tr, parseFinData(tr));
+                }
+                input.value = '';
+                renderModalGrids();
+                showToast('已上传 ' + res.uploaded + ' 张', false);
+            })
+            .catch(function () { showToast('上传失败', true); })
+            .finally(function () { btn.disabled = false; });
+        });
+    });
+
+    /* 成品图弹窗 */
+    var finBackdrop = document.getElementById('ai-fin-modal-backdrop');
+    var finModalEl = finBackdrop ? finBackdrop.querySelector('.ai-orig-modal') : null;
+    var btnFinEdit = document.getElementById('btn-fin-toggle-edit');
+    var btnFinSelectAll = document.getElementById('btn-fin-select-all');
+    var btnFinSelectNone = document.getElementById('btn-fin-select-none');
+    var btnFinSave = document.getElementById('btn-fin-save-selected');
+    var btnFinDelete = document.getElementById('btn-fin-delete-selected');
+    var btnFinOptimize = document.getElementById('btn-fin-open-optimize');
+    var finModalState = {
+        open: false,
+        asin: '',
+        data: { main: [], aplus: [], optimized: [] },
+        editMode: false,
+        selectedKeys: {},
+        saving: false
+    };
+
+    function finSelectedKeyCount() {
+        return Object.keys(finModalState.selectedKeys).length;
+    }
+
+    function updateFinDeleteBtnState() {
+        if (!btnFinDelete) return;
+        var n = finSelectedKeyCount();
+        btnFinDelete.disabled = n === 0;
+        btnFinDelete.textContent = n > 0 ? ('删除 (' + n + ')') : '删除';
+    }
+
+    function updateFinSaveBtnState() {
+        if (!btnFinSave) return;
+        var n = finSelectedKeyCount();
+        btnFinSave.disabled = n === 0;
+        btnFinSave.textContent = n > 0 ? ('保存 (' + n + ')') : '保存';
+    }
+
+    function updateFinActionBtnState() {
+        updateFinDeleteBtnState();
+        updateFinSaveBtnState();
+        updateFinSelectAllBtnState();
+    }
+
+    function collectAllFinItemKeys() {
+        var keys = [];
+        ['main', 'aplus', 'optimized'].forEach(function (sec) {
+            (finModalState.data[sec] || []).forEach(function (it) {
+                var k = itemKey(it);
+                if (k) keys.push(k);
+            });
+        });
+        return keys;
+    }
+
+    function updateFinSelectAllBtnState() {
+        var allKeys = collectAllFinItemKeys();
+        var n = finSelectedKeyCount();
+        if (btnFinSelectAll) btnFinSelectAll.disabled = allKeys.length === 0;
+        if (btnFinSelectNone) btnFinSelectNone.disabled = n === 0;
+    }
+
+    function selectAllFinItems() {
+        collectAllFinItemKeys().forEach(function (k) {
+            finModalState.selectedKeys[k] = true;
+        });
+        updateFinActionBtnState();
+        renderFinModalGrids();
+    }
+
+    function clearAllFinSelection() {
+        finModalState.selectedKeys = {};
+        updateFinActionBtnState();
+        renderFinModalGrids();
+    }
+
+    function setFinEditMode(on) {
+        finModalState.editMode = !!on;
+        if (!on) finModalState.selectedKeys = {};
+        if (finModalEl) {
+            if (finModalState.editMode) finModalEl.classList.add('edit-mode');
+            else finModalEl.classList.remove('edit-mode');
+        }
+        if (btnFinEdit) btnFinEdit.textContent = finModalState.editMode ? '取消编辑' : '编辑';
+        if (btnFinSelectAll) btnFinSelectAll.style.display = finModalState.editMode ? '' : 'none';
+        if (btnFinSelectNone) btnFinSelectNone.style.display = finModalState.editMode ? '' : 'none';
+        if (btnFinDelete) btnFinDelete.style.display = finModalState.editMode ? '' : 'none';
+        if (btnFinSave) btnFinSave.style.display = finModalState.editMode ? '' : 'none';
+        updateFinActionBtnState();
+        renderFinModalGrids();
+    }
+
+    function renderFinModalGrids() {
+        var data = finModalState.data;
+        document.getElementById('fin-modal-count-main').textContent = (data.main || []).length + ' 张';
+        document.getElementById('fin-modal-count-aplus').textContent = (data.aplus || []).length + ' 张';
+        var countOpt = document.getElementById('fin-modal-count-optimized');
+        if (countOpt) countOpt.textContent = (data.optimized || []).length + ' 张';
+
+        function fillGrid(gridId, section, items) {
+            var grid = document.getElementById(gridId);
+            grid.innerHTML = '';
+            if (!items || !items.length) {
+                grid.innerHTML = '<div class="ai-orig-empty-section" style="grid-column:1/-1;">暂无成品图</div>';
+                return;
+            }
+            items.forEach(function (item) {
+                var key = itemKey(item);
+                var src = itemSrc(item);
+                if (!src) return;
+                var wrap = document.createElement('div');
+                wrap.className = 'ai-orig-grid-item';
+                wrap.setAttribute('data-key', key);
+                wrap.setAttribute('data-section', section);
+                var img = document.createElement('img');
+                img.src = src;
+                img.alt = '';
+                var chk = document.createElement('input');
+                chk.type = 'checkbox';
+                chk.className = 'orig-pick-check';
+                chk.title = '选中删除';
+                if (finModalState.selectedKeys[key]) {
+                    chk.checked = true;
+                    wrap.classList.add('is-pick-selected');
+                }
+                chk.addEventListener('change', function (e) {
+                    e.stopPropagation();
+                    if (chk.checked) {
+                        finModalState.selectedKeys[key] = true;
+                        wrap.classList.add('is-pick-selected');
+                    } else {
+                        delete finModalState.selectedKeys[key];
+                        wrap.classList.remove('is-pick-selected');
+                    }
+                    updateFinActionBtnState();
+                });
+                chk.addEventListener('click', function (e) { e.stopPropagation(); });
+                var link = document.createElement('a');
+                link.href = src;
+                link.target = '_blank';
+                link.rel = 'noopener';
+                link.className = 'img-open-link';
+                link.textContent = '查看';
+                wrap.appendChild(img);
+                if (item.module) {
+                    var badge = document.createElement('div');
+                    badge.style.cssText = 'position:absolute;left:6px;top:6px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;z-index:2;';
+                    badge.textContent = item.module;
+                    wrap.appendChild(badge);
+                }
+                wrap.appendChild(chk);
+                wrap.appendChild(link);
+                if (finModalState.editMode) {
+                    wrap.addEventListener('click', function (e) {
+                        if (e.target === chk || e.target === link) return;
+                        chk.checked = !chk.checked;
+                        chk.dispatchEvent(new Event('change'));
+                    });
+                }
+                grid.appendChild(wrap);
+            });
+        }
+        fillGrid('fin-grid-main', 'main', data.main);
+        fillGrid('fin-grid-aplus', 'aplus', data.aplus);
+        fillGrid('fin-grid-optimized', 'optimized', data.optimized);
+    }
+
+    function persistFinModalData(done) {
+        var body = new FormData();
+        body.append('asin', finModalState.asin);
+        body.append('finished_images_json', JSON.stringify(finModalState.data));
+        finModalState.saving = true;
+        return postForm(SAVE_FIN_URL, body).then(function (res) {
+            if (res.data && res.data.ok) {
+                var fin = extractFinishedImages(res.data) || finModalState.data;
+                finModalState.data = fin;
+                var tr = findTrByAsin(finModalState.asin);
+                if (tr) applyFinishedImagesToRow(tr, fin);
+                if (typeof done === 'function') done(true);
+                return true;
+            }
+            showToast((res.data && res.data.error) || '保存失败', true);
+            if (typeof done === 'function') done(false);
+            return false;
+        }).catch(function () {
+            showToast('保存失败', true);
+            if (typeof done === 'function') done(false);
+            return false;
+        }).finally(function () { finModalState.saving = false; });
+    }
+
+    function openFinModal(tr) {
+        finModalState.asin = asinKeyFromTr(tr) || tr.getAttribute('data-asin');
+        finModalState.data = parseFinData(tr);
+        document.getElementById('ai-fin-modal-asin').textContent = finModalState.asin;
+        setFinEditMode(false);
+        finBackdrop.classList.add('open');
+        finBackdrop.setAttribute('aria-hidden', 'false');
+        finModalState.open = true;
+        renderFinModalGrids();
+    }
+
+    function closeFinModal() {
+        setFinEditMode(false);
+        finBackdrop.classList.remove('open');
+        finBackdrop.setAttribute('aria-hidden', 'true');
+        finModalState.open = false;
+    }
+
+    document.querySelectorAll('[data-btn-fin-expand]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var tr = btn.closest('tr');
+            if (tr) openFinModal(tr);
+        });
+    });
+
+    document.getElementById('btn-fin-modal-close').addEventListener('click', closeFinModal);
+    if (finBackdrop) {
+        finBackdrop.addEventListener('click', function (e) {
+            if (e.target === finBackdrop) closeFinModal();
+        });
+    }
+    if (btnFinEdit) {
+        btnFinEdit.addEventListener('click', function () {
+            setFinEditMode(!finModalState.editMode);
+        });
+    }
+    if (btnFinSelectAll) {
+        btnFinSelectAll.addEventListener('click', function () {
+            if (!finModalState.editMode) return;
+            selectAllFinItems();
+        });
+    }
+    if (btnFinSelectNone) {
+        btnFinSelectNone.addEventListener('click', function () {
+            if (!finModalState.editMode) return;
+            clearAllFinSelection();
+        });
+    }
+    if (btnFinSave) {
+        btnFinSave.addEventListener('click', function () {
+            if (finModalState.saving) return;
+            var keys = finModalState.selectedKeys;
+            var n = finSelectedKeyCount();
+            if (!n) {
+                showToast('请先勾选要保存到本地的成品图', true);
+                return;
+            }
+            var downloadKeys = [];
+            ['main', 'aplus'].forEach(function (sec) {
+                (finModalState.data[sec] || []).forEach(function (it) {
+                    var k = itemKey(it);
+                    if (keys[k]) downloadKeys.push(k);
+                });
+            });
+            if (!downloadKeys.length) {
+                showToast('请从主图-副图或 A+ 图勾选图片（已优化图请用图片优化功能）', true);
+                return;
+            }
+            var body = new FormData();
+            body.append('asin', finModalState.asin);
+            body.append('source_keys', JSON.stringify(downloadKeys));
+            btnFinSave.disabled = true;
+            showToast('正在打包下载…', false);
+            fetch(DOWNLOAD_FIN_URL, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken() },
+                body: body,
+                credentials: 'same-origin'
+            }).then(function (res) {
+                var ct = (res.headers.get('Content-Type') || '').toLowerCase();
+                if (!res.ok) {
+                    if (ct.indexOf('application/json') >= 0) {
+                        return res.json().then(function (j) {
+                            throw new Error((j && j.error) || '下载失败');
+                        });
+                    }
+                    throw new Error('下载失败');
+                }
+                if (ct.indexOf('application/json') >= 0) {
+                    return res.json().then(function (j) {
+                        throw new Error((j && j.error) || '下载失败');
+                    });
+                }
+                return res.blob();
+            }).then(function (blob) {
+                var asinKey = (finModalState.asin || '').trim().toUpperCase();
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = asinKey + '_finished.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+                setFinEditMode(false);
+                showToast('已下载 ' + downloadKeys.length + ' 张（解压后为 ' + asinKey + '/main_image 或 aplus_image）', false);
+            }).catch(function (err) {
+                showToast(err.message || '下载失败', true);
+                updateFinActionBtnState();
+            }).finally(function () {
+                btnFinSave.disabled = false;
+                updateFinActionBtnState();
+            });
+        });
+    }
+    if (btnFinDelete) {
+        btnFinDelete.addEventListener('click', function () {
+            if (finModalState.saving) return;
+            var keys = finModalState.selectedKeys;
+            var n = finSelectedKeyCount();
+            if (!n) {
+                showToast('请先勾选要删除的成品图', true);
+                return;
+            }
+            if (!confirm('确定删除已选中的 ' + n + ' 张成品图吗？')) return;
+            function filterItems(items) {
+                return (items || []).filter(function (it) { return !keys[itemKey(it)]; });
+            }
+            finModalState.data = {
+                main: filterItems(finModalState.data.main),
+                aplus: filterItems(finModalState.data.aplus),
+                optimized: filterItems(finModalState.data.optimized)
+            };
+            btnFinDelete.disabled = true;
+            persistFinModalData(function (ok) {
+                if (ok) {
+                    setFinEditMode(false);
+                    showToast('已删除 ' + n + ' 张成品图', false);
+                } else {
+                    updateFinActionBtnState();
+                }
+            });
+        });
+    }
+
+    document.querySelectorAll('[data-fin-upload-section]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var section = btn.getAttribute('data-fin-upload-section');
+            var inputId = section === 'main' ? 'fin-upload-main-files'
+                : section === 'aplus' ? 'fin-upload-aplus-files'
+                : 'fin-upload-optimized-files';
+            var input = document.getElementById(inputId);
+            if (!input || !input.files.length) {
+                showToast('请先选择图片文件', true);
+                return;
+            }
+            var body = new FormData();
+            body.append('asin', finModalState.asin);
+            body.append('image_section', section);
+            for (var i = 0; i < input.files.length; i++) {
+                body.append('images', input.files[i]);
+            }
+            btn.disabled = true;
+            postForm(UPLOAD_FIN_URL, body).then(function (res) {
+                var d = res.data || {};
+                if (d.ok) {
+                    var fin = extractFinishedImages(d) || finModalState.data;
+                    finModalState.data = fin;
+                    var tr = findTrByAsin(finModalState.asin);
+                    if (tr) applyFinishedImagesToRow(tr, fin);
+                    input.value = '';
+                    renderFinModalGrids();
+                    showToast('已上传 ' + (d.uploaded || input.files.length) + ' 张', false);
+                } else {
+                    showToast(d.error || '上传失败', true);
+                }
+            }).catch(function () {
+                showToast('上传失败', true);
+            }).finally(function () { btn.disabled = false; });
+        });
+    });
+
+    /* 成品图 AI 优化弹窗 */
+    var finOptBackdrop = document.getElementById('ai-fin-opt-modal-backdrop');
+    var finOptModalEl = finOptBackdrop ? finOptBackdrop.querySelector('.ai-fin-opt-modal') : null;
+    var finOptGrid = document.getElementById('fin-opt-pick-grid');
+    var finOptPlanInput = document.getElementById('fin-opt-plan-input');
+    var btnFinOptSubmit = document.getElementById('btn-fin-opt-submit');
+    var btnFinOptCancel = document.getElementById('btn-fin-opt-cancel');
+    var btnFinOptClose = document.getElementById('btn-fin-opt-modal-close');
+    var finOptLoadingBar = document.getElementById('fin-opt-loading-bar');
+    var finOptLoadingText = document.getElementById('fin-opt-loading-text');
+    var finOptState = { selectedKeys: {}, loading: false };
+    var FIN_OPT_SUBMIT_LABEL = '开始优化';
+
+    function setFinOptimizeLoading(on, message) {
+        finOptState.loading = !!on;
+        if (finOptModalEl) finOptModalEl.classList.toggle('is-optimizing', finOptState.loading);
+        if (finOptLoadingBar) finOptLoadingBar.classList.toggle('show', finOptState.loading);
+        if (finOptLoadingText && message) finOptLoadingText.textContent = message;
+        if (btnFinOptSubmit) {
+            btnFinOptSubmit.disabled = finOptState.loading;
+            btnFinOptSubmit.classList.toggle('is-loading', finOptState.loading);
+            btnFinOptSubmit.textContent = finOptState.loading ? '优化中，请稍候…' : FIN_OPT_SUBMIT_LABEL;
+        }
+        if (btnFinOptCancel) btnFinOptCancel.disabled = finOptState.loading;
+        if (btnFinOptClose) btnFinOptClose.disabled = finOptState.loading;
+        if (btnFinOptimize) btnFinOptimize.disabled = finOptState.loading;
+    }
+
+    function renderFinOptPickGrid() {
+        if (!finOptGrid) return;
+        finOptGrid.innerHTML = '';
+        var candidates = [];
+        ['main', 'aplus'].forEach(function (sec) {
+            (finModalState.data[sec] || []).forEach(function (item) {
+                candidates.push({ section: sec, item: item });
+            });
+        });
+        if (!candidates.length) {
+            finOptGrid.innerHTML = '<div class="ai-orig-empty-section" style="grid-column:1/-1;">暂无可优化图片，请先生成或上传主图/A+ 成品图</div>';
+            return;
+        }
+        candidates.forEach(function (row) {
+            var item = row.item;
+            var key = itemKey(item);
+            var src = itemSrc(item);
+            if (!src) return;
+            var pick = document.createElement('div');
+            pick.className = 'ai-fin-opt-pick' + (finOptState.selectedKeys[key] ? ' is-selected' : '');
+            pick.setAttribute('data-key', key);
+            var tag = document.createElement('span');
+            tag.className = 'pick-tag';
+            tag.textContent = row.section === 'main' ? '主图-副图' : 'A+';
+            var img = document.createElement('img');
+            img.src = src;
+            img.alt = '';
+            pick.appendChild(tag);
+            pick.appendChild(img);
+            pick.addEventListener('click', function () {
+                if (finOptState.selectedKeys[key]) {
+                    delete finOptState.selectedKeys[key];
+                    pick.classList.remove('is-selected');
+                } else {
+                    finOptState.selectedKeys[key] = true;
+                    pick.classList.add('is-selected');
+                }
+            });
+            finOptGrid.appendChild(pick);
+        });
+    }
+
+    function openFinOptimizeModal() {
+        if (!finModalState.asin) {
+            showToast('请先打开成品图', true);
+            return;
+        }
+        finOptState.selectedKeys = {};
+        setFinOptimizeLoading(false);
+        if (finOptPlanInput) finOptPlanInput.value = '';
+        document.getElementById('ai-fin-opt-modal-asin').textContent = finModalState.asin;
+        renderFinOptPickGrid();
+        finOptBackdrop.classList.add('open');
+        finOptBackdrop.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeFinOptimizeModal() {
+        if (finOptState.loading) return;
+        setFinOptimizeLoading(false);
+        if (finOptBackdrop) {
+            finOptBackdrop.classList.remove('open');
+            finOptBackdrop.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    if (btnFinOptimize) btnFinOptimize.addEventListener('click', openFinOptimizeModal);
+    document.getElementById('btn-fin-opt-modal-close').addEventListener('click', closeFinOptimizeModal);
+    document.getElementById('btn-fin-opt-cancel').addEventListener('click', closeFinOptimizeModal);
+    if (finOptBackdrop) {
+        finOptBackdrop.addEventListener('click', function (e) {
+            if (e.target === finOptBackdrop) closeFinOptimizeModal();
+        });
+    }
+    if (btnFinOptSubmit) {
+        btnFinOptSubmit.addEventListener('click', function () {
+            if (finOptState.loading) return;
+            var keys = Object.keys(finOptState.selectedKeys);
+            if (!keys.length) {
+                showToast('请先选择要优化的图片', true);
+                return;
+            }
+            var plan = finOptPlanInput ? finOptPlanInput.value.trim() : '';
+            if (!plan) {
+                showToast('请填写优化内容与方案', true);
+                return;
+            }
+            var asin = finModalState.asin;
+            var notesEl = document.getElementById('user_notes');
+            var body = new FormData();
+            body.append('asin', asin);
+            body.append('source_keys', JSON.stringify(keys));
+            body.append('optimization_plan', plan);
+            if (notesEl && notesEl.value) body.append('user_notes', notesEl.value);
+
+            setFinOptimizeLoading(true, '正在上传参考图并调用 AI 优化，请勿关闭页面（约 30–120 秒）…');
+            setRowTaskState(asin, 'row-processing');
+            showToast('正在优化图片，请稍候…', false);
+
+            var tick = 0;
+            var progressTimer = setInterval(function () {
+                tick += 1;
+                var dots = '.'.repeat((tick % 3) + 1);
+                setFinOptimizeLoading(
+                    true,
+                    'AI 正在优化图片' + dots + ' 已等待 ' + tick + ' 秒，请耐心等待'
+                );
+            }, 1000);
+
+            postForm(OPTIMIZE_FIN_URL, body).then(function (res) {
+                var d = res.data || {};
+                if (d.ok) {
+                    var tr = findTrByAsin(asin);
+                    if (tr) applyFinishedImagesToRow(tr, d);
+                    renderFinModalGrids();
+                    setRowTaskState(asin, 'row-done');
+                    setFinOptimizeLoading(false);
+                    closeFinOptimizeModal();
+                    showToast('图片优化完成，已加入已优化图', false);
+                } else {
+                    setRowTaskState(asin, 'row-fail');
+                    showToast(d.error || '优化失败', true);
+                }
+            }).catch(function () {
+                setRowTaskState(asin, 'row-fail');
+                showToast('优化失败，请检查网络或 API 配置', true);
+            }).finally(function () {
+                clearInterval(progressTimer);
+                if (finOptState.loading) setFinOptimizeLoading(false);
+            });
+        });
+    }
+
+    /* 底部 dock */
+    var toggle = document.getElementById('dock-toggle-expand');
+    var dockBody = document.getElementById('dock-body');
+    var submitBtn = document.getElementById('dock-submit-btn');
+    var singleSubmitBtn = document.getElementById('dock-single-submit-btn');
+    var modeBatchRadio = document.getElementById('ai_gen_mode_batch');
+    var modeSingleRadio = document.getElementById('ai_gen_mode_single');
+    var dockBatchPanel = document.getElementById('dock-batch-panel');
+    var dockSinglePanel = document.getElementById('dock-single-panel');
+
+    function getAiGenMode() {
+        return (modeSingleRadio && modeSingleRadio.checked) ? 'single' : 'batch';
+    }
+
+    function syncAiGenModeUi() {
+        var single = getAiGenMode() === 'single';
+        if (dockSinglePanel) {
+            dockSinglePanel.classList.toggle('is-active', single);
+        }
+        if (dockBatchPanel) {
+            dockBatchPanel.style.display = single ? 'none' : 'block';
+        }
+        if (submitBtn) submitBtn.style.display = single ? 'none' : '';
+        if (singleSubmitBtn) singleSubmitBtn.style.display = single ? '' : 'none';
+    }
+
+    if (modeBatchRadio) modeBatchRadio.addEventListener('change', syncAiGenModeUi);
+    if (modeSingleRadio) modeSingleRadio.addEventListener('change', syncAiGenModeUi);
+    syncAiGenModeUi();
+
+    if (toggle && dockBody) {
+        toggle.addEventListener('click', function () {
+            var collapsed = dockBody.classList.toggle('collapsed');
+            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            toggle.textContent = collapsed ? '展开' : '收起';
+        });
+    }
+
+    function mergeFinishedImages(existing, incoming) {
+        existing = existing || { main: [], aplus: [], optimized: [] };
+        incoming = incoming || { main: [], aplus: [], optimized: [] };
+        function mergeList(oldList, newList) {
+            var map = {};
+            (oldList || []).forEach(function (item) {
+                var k = itemKey(item);
+                if (k) map[k] = item;
+            });
+            (newList || []).forEach(function (item) {
+                var k = itemKey(item);
+                if (k) map[k] = item;
+            });
+            return Object.keys(map).map(function (k) { return map[k]; });
+        }
+        return {
+            main: mergeList(existing.main, incoming.main),
+            aplus: mergeList(existing.aplus, incoming.aplus),
+            optimized: mergeList(existing.optimized, incoming.optimized)
+        };
+    }
+
+    function applyFinishedImagesToRow(tr, payload) {
+        if (!tr) return;
+        var fin = extractFinishedImages(payload);
+        if (!fin) return;
+        var merged = mergeFinishedImages(parseFinData(tr), fin);
+        setFinJson(tr, merged);
+        updateFinCell(tr, merged);
+        if (finModalState.open && finModalState.asin === asinKeyFromTr(tr)) {
+            finModalState.data = merged;
+            renderFinModalGrids();
+        }
+    }
+
+    function fetchGenerationPlan(asin, mainTa, aplusTa) {
+        var planBody = new FormData();
+        planBody.append('asin', asin);
+        planBody.append('main_image_requirements', mainTa ? mainTa.value : '');
+        planBody.append('aplus_image_requirements', aplusTa ? aplusTa.value : '');
+        return postForm(GENERATE_PLAN_URL, planBody).then(function (res) {
+            var d = res.data || {};
+            if (!d.ok) {
+                return { ok: false, error: d.error || '无可用模块', asin: asin };
+            }
+            return {
+                ok: true,
+                asin: asin,
+                modules: d.modules || [],
+                estimate: d.estimate || {},
+                pending_jobs: d.pending_jobs || []
+            };
+        });
+    }
+
+    function progressUpdate(opts) {
+        if (window.AiGenProgress) AiGenProgress.update(opts);
+    }
+
+    function progressAdd(n) {
+        if (window.AiGenProgress) AiGenProgress.addCompleted(n);
+    }
+
+    var batchGenState = { apiCompleted: 0 };
+
+    function countFinMainAplus(data) {
+        if (!data) return 0;
+        return (data.main || []).length + (data.aplus || []).length;
+    }
+
+    function syncProgressFromApiCompleted() {
+        if (!window.AiGenProgress) return;
+        progressUpdate({ completed: batchGenState.apiCompleted || 0 });
+    }
+
+    function readProgressExpected() {
+        try {
+            var uid = document.body.getAttribute('data-user-id') || '0';
+            var raw = localStorage.getItem('ai_gen_batch_progress_v3_u' + uid);
+            if (!raw) return 0;
+            var st = JSON.parse(raw);
+            return st && st.totalExpected ? parseInt(st.totalExpected, 10) : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function runPendingJobsParallel(asin, jobs, userNotes, tr, mainTa, aplusTa) {
+        if (!jobs || !jobs.length) {
+            return Promise.resolve({ ok: true, message: asin + ' 无需生成' });
+        }
+        var jobIndex = 0;
+        var errors = [];
+        var successCount = 0;
+
+        function runNextBatch() {
+            if (jobIndex >= jobs.length) {
+                if (errors.length && successCount === 0) {
+                    return { ok: false, error: errors.slice(0, 3).join('；') };
+                }
+                return {
+                    ok: true,
+                    partial: errors.length > 0,
+                    message: asin + ' 生图结束：成功 ' + successCount + ' 张' + (errors.length ? '，部分失败' : '')
+                };
+            }
+            var batch = jobs.slice(jobIndex, jobIndex + PARALLEL_WORKERS);
+            var batchEnd = jobIndex + batch.length;
+            jobIndex = batchEnd;
+            progressUpdate({
+                detail: asin + ' · 服务端并行 ' + batch.length + ' 路（' + batchEnd + '/' + jobs.length + '）· 请耐心等待'
+            });
+
+            var body = new FormData();
+            body.append('asin', asin);
+            body.append('jobs_json', JSON.stringify(batch));
+            body.append('user_notes', userNotes || '');
+            body.append('main_image_requirements', mainTa ? mainTa.value : '');
+            body.append('aplus_image_requirements', aplusTa ? aplusTa.value : '');
+
+            return postForm(RUN_JOBS_BATCH_URL, body, FETCH_TIMEOUT_MS).then(function (res) {
+                var d = res.data || {};
+                if (!d.ok) {
+                    errors.push(d.error || '本批生图失败');
+                    showToast(asin + ' 第 ' + batchEnd + '/' + jobs.length + ' 批失败：' + (d.error || ''), true);
+                    if (d.reload) {
+                        return {
+                            ok: false,
+                            error: d.error || '服务热重载，请等待后重新点击批量生图'
+                        };
+                    }
+                    return runNextBatch();
+                }
+                if (tr && d.finished_images) {
+                    applyFinishedImagesToRow(tr, d);
+                }
+                var added = d.added || 0;
+                successCount += added;
+                batchGenState.apiCompleted = successCount;
+                syncProgressFromApiCompleted();
+                (d.errors || []).forEach(function (e) { errors.push(e); });
+                progressUpdate({
+                    detail: asin + ' · 本批完成 +' + added + ' 张 · 累计成功约 ' + successCount + ' 张（' + batchEnd + '/' + jobs.length + '）'
+                });
+                return runNextBatch();
+            }).catch(function (err) {
+                var msg = (err && err.name === 'AbortError') ? '本批超时（可继续下一批）' : '本批网络中断';
+                errors.push(msg);
+                showToast(asin + ' ' + msg, true);
+                return runNextBatch();
+            });
+        }
+
+        return runNextBatch();
+    }
+
+    function topupModulesForAsin(asin, userNotes, tr, maxRounds) {
+        var body = new FormData();
+        body.append('asin', asin);
+        body.append('user_notes', userNotes || '');
+        progressUpdate({ detail: asin + ' · 补全不足张数…' });
+        var rounds = 0;
+        var cap = Math.max(3, maxRounds || 20);
+        var topupAdded = 0;
+
+        function nextChunk() {
+            if (rounds >= cap) {
+                return {
+                    ok: true,
+                    partial: true,
+                    message: asin + ' 补全已达上限（' + cap + ' 轮），请检查失败模块后重试'
+                };
+            }
+            rounds += 1;
+            return postForm(TOPUP_CHUNK_URL, body, FETCH_TIMEOUT_MS).then(function (res) {
+                var d = res.data || {};
+                if (!d.ok) {
+                    return { ok: false, error: d.error || '补全失败' };
+                }
+                if (tr && d.finished_images) {
+                    applyFinishedImagesToRow(tr, d);
+                }
+                var added = d.added || 0;
+                topupAdded += added;
+                batchGenState.apiCompleted = (batchGenState.apiCompleted || 0) + added;
+                syncProgressFromApiCompleted();
+                if (d.has_more && added > 0) {
+                    return nextChunk();
+                }
+                if (d.has_more && added <= 0) {
+                    return {
+                        ok: true,
+                        partial: true,
+                        message: asin + ' 补全无进展，已停止（避免重复生图）'
+                    };
+                }
+                var still = d.still_incomplete || [];
+                if (still.length) {
+                    return {
+                        ok: true,
+                        partial: true,
+                        message: asin + ' 补全结束，仍有模块未满 ' + IMAGES_PER_MODULE + ' 张：' + still.join('、')
+                    };
+                }
+                var topped = d.topped_up || [];
+                if (topped.length) {
+                    return { ok: true, message: asin + ' 已补全不足张数的模块' };
+                }
+                return { ok: true, message: asin + ' 各模块均已满 ' + IMAGES_PER_MODULE + ' 张' };
+            });
+        }
+
+        return nextChunk().catch(function () {
+            return { ok: false, error: '补全请求失败' };
+        });
+    }
+
+    function generateModulesForAsin(asin, userNotes, asinIndex, asinTotal) {
+        var tr = findTrByAsin(asin);
+        if (!tr) return Promise.resolve({ ok: false, error: '行不存在' });
+        var mainTa = tr.querySelector('textarea[name="main_image_requirements"]');
+        var aplusTa = tr.querySelector('textarea[name="aplus_image_requirements"]');
+
+        progressUpdate({
+            currentAsin: asin,
+            asinIndex: asinIndex || 0,
+            asinTotal: asinTotal || 0,
+            detail: asin + ' · 分析待生成张数…'
+        });
+
+        return fetchGenerationPlan(asin, mainTa, aplusTa).then(function (planData) {
+            if (!planData.ok) {
+                return { ok: false, error: planData.error || '无可用模块' };
+            }
+            var est = planData.estimate || {};
+            var missingTotal = est.missing_to_generate || est.append_per_run || 0;
+            var jobs = planData.pending_jobs || [];
+            if (!jobs.length) {
+                return { ok: false, error: asin + ' 无可用生图模块，请先填写图需' };
+            }
+            showToast(
+                asin + '：本次追加 ' + missingTotal + ' 张（每模块 ' + IMAGES_PER_MODULE + ' 张），服务端每批 ' + PARALLEL_WORKERS + ' 路并行',
+                false
+            );
+            return runPendingJobsParallel(asin, jobs, userNotes, tr, mainTa, aplusTa).then(function (jobRes) {
+                if (!jobRes.ok) return jobRes;
+                if (jobRes.partial) {
+                    jobRes.message = (jobRes.message || '') + '（失败槽位已跳过，不再补全）';
+                }
+                if (tr) applyFinishedImagesToRow(tr, parseFinData(tr));
+                return jobRes;
+            });
+        }).catch(function () {
+            return { ok: false, error: '网络错误' };
+        });
+    }
+
+    function batchGenerateImages() {
+        var asins = requireSelectedAsins();
+        if (!asins) return;
+        var notesEl = document.getElementById('user_notes');
+        var userNotes = notesEl ? notesEl.value : '';
+
+        var planTasks = asins.map(function (asin) {
+            var tr = findTrByAsin(asin);
+            if (!tr) return Promise.resolve({ ok: false, asin: asin, missing: 0 });
+            var mainTa = tr.querySelector('textarea[name="main_image_requirements"]');
+            var aplusTa = tr.querySelector('textarea[name="aplus_image_requirements"]');
+            return fetchGenerationPlan(asin, mainTa, aplusTa).then(function (p) {
+                var est = p.estimate || {};
+                return {
+                    ok: p.ok,
+                    asin: asin,
+                    missing: p.ok ? ((est.missing_to_generate || est.append_per_run) || 0) : 0,
+                    module_count: p.ok ? (est.module_count || (p.modules && p.modules.length) || 0) : 0,
+                    error: p.error
+                };
+            });
+        });
+
+        batchGenState.apiCompleted = 0;
+
+        return Promise.all(planTasks).then(function (plans) {
+            var totalExpected = 0;
+            var planErrors = [];
+            plans.forEach(function (p) {
+                if (p.ok) {
+                    totalExpected += p.missing || (p.module_count * IMAGES_PER_MODULE) || 0;
+                } else {
+                    planErrors.push((p.asin || '') + '：' + (p.error || '计划失败'));
+                }
+            });
+            if (planErrors.length && planErrors.length === plans.length) {
+                showToast(planErrors.join('；'), true);
+                return;
+            }
+            if (window.AiGenProgress) {
+                AiGenProgress.start({
+                    totalExpected: totalExpected,
+                    completed: 0,
+                    asinTotal: asins.length,
+                    asinIndex: 0,
+                    parallelWorkers: PARALLEL_WORKERS,
+                    imagesPerModule: IMAGES_PER_MODULE,
+                    detail: totalExpected > 0
+                        ? ('预计本次追加 ' + totalExpected + ' 张 · 每批 ' + PARALLEL_WORKERS + ' 路并行')
+                        : '正在准备生图任务…'
+                });
+            }
+            if (totalExpected === 0) {
+                showToast('无法计算生图数量，请确认已填写图需', true);
+                if (window.AiGenProgress) AiGenProgress.fail('无可用模块');
+                return;
+            }
+            return runBatchSequential(asins, function (asin, cur, total) {
+                return generateModulesForAsin(asin, userNotes, cur, total);
+            }, { label: 'AI 生图', btn: submitBtn, useProgress: true });
+        }).catch(function () {
+            if (window.AiGenProgress) AiGenProgress.fail('批量生图启动失败');
+        });
+    }
+
+    function singleModuleGenerateImages() {
+        var asins = requireSelectedAsins();
+        if (!asins) return;
+        if (asins.length !== 1) {
+            showToast('单模块生图请只勾选一个 ASIN', true);
+            return;
+        }
+        var promptEl = document.getElementById('single_module_prompt');
+        var sectionEl = document.getElementById('single_module_section');
+        var notesEl = document.getElementById('single_user_notes');
+        var modulePrompt = promptEl ? promptEl.value.trim() : '';
+        if (!modulePrompt) {
+            showToast('请填写模块图需（建议以 ## 模块名 开头）', true);
+            if (promptEl) promptEl.focus();
+            return;
+        }
+        var asin = asins[0];
+        var tr = findTrByAsin(asin);
+        var section = sectionEl ? sectionEl.value : 'main';
+        var userNotes = notesEl ? notesEl.value : '';
+        var body = new FormData();
+        body.append('asin', asin);
+        body.append('section', section);
+        body.append('module_prompt', modulePrompt);
+        body.append('user_notes', userNotes);
+
+        batchGenState.apiCompleted = 0;
+        if (window.AiGenProgress) {
+            AiGenProgress.start({
+                totalExpected: IMAGES_PER_MODULE,
+                completed: 0,
+                asinTotal: 1,
+                asinIndex: 1,
+                parallelWorkers: 1,
+                imagesPerModule: IMAGES_PER_MODULE,
+                detail: asin + ' · 单模块追加 ' + IMAGES_PER_MODULE + ' 张…'
+            });
+        }
+        if (singleSubmitBtn) singleSubmitBtn.disabled = true;
+        return postForm(RUN_CUSTOM_MODULE_URL, body, FETCH_TIMEOUT_MS).then(function (res) {
+            var d = res.data || {};
+            if (!d.ok) {
+                showToast((d.error || '单模块生图失败'), true);
+                if (window.AiGenProgress) AiGenProgress.fail(d.error || '失败');
+                return;
+            }
+            if (tr) applyFinishedImagesToRow(tr, d);
+            batchGenState.apiCompleted = d.added || 0;
+            syncProgressFromApiCompleted();
+            var errMsg = (d.errors || []).join('；');
+            var msg = asin + ' · 「' + (d.title || '模块') + '」追加 ' + (d.added || 0) + ' 张（该模块共 ' + (d.module_total || 0) + ' 张）';
+            if (errMsg) msg += '；部分失败：' + errMsg;
+            showToast(msg, !!errMsg);
+            if (window.AiGenProgress) AiGenProgress.finish(msg);
+        }).catch(function () {
+            showToast(asin + ' 单模块生图网络错误', true);
+            if (window.AiGenProgress) AiGenProgress.fail('网络错误');
+        }).finally(function () {
+            if (singleSubmitBtn) singleSubmitBtn.disabled = false;
+        });
+    }
+
+    if (submitBtn) {
+        submitBtn.addEventListener('click', batchGenerateImages);
+    }
+    if (singleSubmitBtn) {
+        singleSubmitBtn.addEventListener('click', singleModuleGenerateImages);
+    }
+
+    var btnNeedView = document.getElementById('btn-dock-view-need');
+    if (btnNeedView) btnNeedView.addEventListener('click', openNeedPreviewModal);
+    var needBackdrop = document.getElementById('ai-need-modal-backdrop');
+    var btnNeedClose = document.getElementById('btn-need-modal-close');
+    if (btnNeedClose) {
+        btnNeedClose.addEventListener('click', function () {
+            needBackdrop.classList.remove('open');
+        });
+    }
+    if (needBackdrop) {
+        needBackdrop.addEventListener('click', function (e) {
+            if (e.target === needBackdrop) needBackdrop.classList.remove('open');
+        });
+    }
+})();
+</script>
+{% endblock %}

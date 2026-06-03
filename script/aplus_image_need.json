@@ -1,0 +1,156 @@
+{
+  "modules": [
+    {
+      "module_id": "module_1",
+      "module_type": "Standard Company Logo",
+      "design_intent": "建立品牌第一印象",
+      "core_benefit": "品牌识别与信任建立",
+      "visual_description": "背景为绿色草地和阳光，左侧放置面包篮，篮内有面包，篮柄上放置产品，右侧为品牌Logo和标语，整体营造自然、健康的品牌形象。",
+      "copy_suggestions": {
+        "headline": "Bread Pilot™",
+        "subheadline": "The Perfect Slice Every Time",
+        "headline_position": "右上角",
+        "subheadline_position": "右上角Logo下方",
+        "font_family": "Montserrat",
+        "headline_font_size": "36px",
+        "subheadline_font_size": "20px",
+        "font_color": "#FFFFFF",
+        "font_style": "Bold/Regular"
+      },
+      "visual_details": "背景光线自然，整体明亮，草地绿色饱和度适中，产品和面包篮局部高光，文字居中对齐，Logo和标语右对齐，文字留白适中。"
+    },
+    {
+      "module_id": "module_2",
+      "module_type": "Standard Image & Text Overlay",
+      "design_intent": "突出产品最核心差异化卖点",
+      "core_benefit": "切片均匀，使用方便，提升用户体验",
+      "visual_description": "左侧展示传统切片不均匀的面包，右侧展示使用产品后切片均匀的面包，中间为产品图，展示其独特设计。",
+      "copy_suggestions": {
+        "headline": "Perfect Slices Every Time",
+        "subheadline": "Uneven, Messy, Frustrating vs. Clean, Consistent Slices",
+        "headline_position": "顶部居中",
+        "subheadline_position": "底部居中",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "20px",
+        "font_color": "#333333",
+        "font_style": "Bold/Regular"
+      },
+      "visual_details": "背景为白色，产品居中，左侧面包碎片散落，右侧整齐切片，文字对齐居中，箭头指向产品。"
+    },
+    {
+      "module_id": "module_3",
+      "module_type": "Standard Multiple Image & Text",
+      "design_intent": "展示产品的核心功能和特点",
+      "core_benefit": "可调节厚度，满足多种需求",
+      "visual_description": "三列布局，每列展示不同厚度的面包切片，配合产品特写和标尺，展示厚度调节功能。",
+      "copy_suggestions": {
+        "headline": "Unique Adjustable Guide",
+        "subheadline": "",
+        "headline_position": "顶部居中",
+        "subheadline_position": "",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "",
+        "font_color": "#333333",
+        "font_style": "Bold"
+      },
+      "visual_details": "每列图片下方标注厚度，背景为白色，产品局部放大，标尺清晰可见，文字对齐居中，列间距15px。"
+    },
+    {
+      "module_id": "module_4",
+      "module_type": "Standard Image & Sidebar",
+      "design_intent": "展示产品使用过程",
+      "core_benefit": "操作简单，切片精准",
+      "visual_description": "左图展示产品放置在桌面上的状态，右图展示用户实际操作切片的场景。",
+      "copy_suggestions": {
+        "headline": "Precision Slicing Made Easy",
+        "subheadline": "Adjust to the desired thickness. Align bread edge.",
+        "headline_position": "顶部居中",
+        "subheadline_position": "底部居中",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "20px",
+        "font_color": "#333333",
+        "font_style": "Bold/Regular"
+      },
+      "visual_details": "背景为浅绿色，左图为俯视角度，右图为侧视角度，图片圆角5px，阴影10%透明度，文字对齐居中。"
+    },
+    {
+      "module_id": "module_5",
+      "module_type": "Standard Comparison Chart",
+      "design_intent": "展示产品切片厚度的多样性",
+      "core_benefit": "满足不同场景需求",
+      "visual_description": "时间轴式布局，展示三种不同厚度的面包切片及其适用场景。",
+      "copy_suggestions": {
+        "headline": "Precision Makes the Difference",
+        "subheadline": "",
+        "headline_position": "顶部居中",
+        "subheadline_position": "",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "",
+        "font_color": "#333333",
+        "font_style": "Bold"
+      },
+      "visual_details": "背景为浅绿色，时间轴居中，图片与文字对齐，行高20px，列间距15px，适用场景文字清晰可见。"
+    },
+    {
+      "module_id": "module_6",
+      "module_type": "Standard Single Image & Sidebar",
+      "design_intent": "展示产品包装及配件",
+      "core_benefit": "完整配件，方便使用",
+      "visual_description": "展示产品包装盒及内部配件，背景为家庭场景，营造温馨感。",
+      "copy_suggestions": {
+        "headline": "What is Inside?",
+        "subheadline": "Adjustable Bread Knife, Screws, Cleaning Cloth, Manual",
+        "headline_position": "右侧顶部",
+        "subheadline_position": "右侧底部",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "20px",
+        "font_color": "#333333",
+        "font_style": "Bold/Regular"
+      },
+      "visual_details": "背景为家庭场景，光线柔和，产品和配件整齐摆放，文字对齐右侧，文字留白适中。"
+    },
+    {
+      "module_id": "module_7",
+      "module_type": "Standard Text",
+      "design_intent": "传达产品质量和品牌承诺",
+      "core_benefit": "高品质保证，用户安心购买",
+      "visual_description": "纯文字排版，背景为品牌色，搭配小图标点缀。",
+      "copy_suggestions": {
+        "headline": "Precision Blade, Guaranteed Quality",
+        "subheadline": "10× Longer Blade Life, Clean Cuts, Resists Breaking",
+        "headline_position": "顶部居中",
+        "subheadline_position": "底部居中",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "20px",
+        "font_color": "#333333",
+        "font_style": "Bold/Regular"
+      },
+      "visual_details": "背景为浅绿色，文字居中，字体清晰，文字留白适中，图标大小48x48px，行高20px。"
+    },
+    {
+      "module_id": "module_8",
+      "module_type": "Custom Text & Image",
+      "design_intent": "展示产品的独特设计和易用性",
+      "core_benefit": "双手通用，适合所有用户",
+      "visual_description": "左图展示左手操作，右图展示右手操作，背景为浅绿色，突出产品的双手通用设计。",
+      "copy_suggestions": {
+        "headline": "Ambidextrous Design for Effortless Slicing",
+        "subheadline": "",
+        "headline_position": "顶部居中",
+        "subheadline_position": "",
+        "font_family": "Montserrat",
+        "headline_font_size": "28px",
+        "subheadline_font_size": "",
+        "font_color": "#333333",
+        "font_style": "Bold"
+      },
+      "visual_details": "左图和右图对称排布，背景为浅绿色，图片圆角5px，阴影10%透明度，文字对齐居中。"
+    }
+  ]
+}

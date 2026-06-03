@@ -1,0 +1,187 @@
+{% extends 'base.html' %}
+{% block title %}AI 分析 - ASIN Listing{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="padding: 28px 32px;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 18px;">
+      <div>
+        <h2 class="card-title" style="margin-bottom:8px; border-bottom:0; padding-bottom:0;">AI 分析</h2>
+        <p style="margin:0; color:#86868b; font-size:0.9rem; max-width:720px;">
+          从原文本库读取 <strong>对标 VOC</strong>（及已配置的 <strong>ASIN 集群 VOC</strong>）。计算前会校验对标 VOC 是否存在；结果写入
+          <a href="{% url 'analysis_list' %}" style="color:#0071e3;">分析结果概览</a>（对标 ASIN 分析 / ASIN 集群分析 / 差异化分析）。
+        </p>
+      </div>
+      <div style="color:#86868b; font-size:0.9rem; white-space:nowrap;">当前列表 {{ page_obj.paginator.count }} 条</div>
+    </div>
+
+    {% if messages %}
+      <div style="margin: 10px 0 18px;">
+        {% for message in messages %}
+          <div style="
+              padding:10px 14px; border-radius: 14px; margin-bottom:10px;
+              background: {% if message.tags == 'success' %}#ecfdf3{% elif message.tags == 'error' %}#fef3f2{% else %}#f2f4f7{% endif %};
+              color: #1d1d1f; border: 1px solid #e8e8ed;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <form method="get" action="{% url 'gpt_analysis' %}" id="form-gpt-filters" style="display:flex; flex-direction:column; gap:12px; margin-bottom: 8px;">
+      <div style="display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <span style="font-size:0.8rem; font-weight:600; color:#86868b; text-transform:uppercase; letter-spacing:0.3px;">ASIN 搜索</span>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字" autocomplete="off"
+                   style="min-width:220px; padding:10px 12px; border-radius:12px; border:1px solid #e8e8ed; background:#fff; font-size:0.9rem;">
+            <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;">搜索</button>
+            {% if search_q %}
+              <a href="{% url 'gpt_analysis' %}{% if show_calculated %}?show_calculated=1{% endif %}" style="color:#0071e3; font-size:0.88rem; text-decoration:none; white-space:nowrap;">清除搜索</a>
+            {% endif %}
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-bottom:2px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; color:#1d1d1f;">
+            <input type="checkbox" name="show_calculated" value="1" {% if show_calculated %}checked{% endif %} onchange="this.form.submit()">
+            显示已计算过的 ASIN（默认仅显示待分析）
+          </label>
+          <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;">应用筛选</button>
+        </div>
+      </div>
+      <p style="margin:0; font-size:0.82rem; color:#98a2b3;">未勾选时只列出「待分析」行；勾选后可对已计算 ASIN 再次分析（单条 / 批量均可）。</p>
+    </form>
+
+
+    <form method="post" action="{% url 'gpt_analysis' %}" id="form-gpt-batch">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="batch">
+      {% if show_calculated %}<input type="hidden" name="show_calculated" value="1">{% endif %}
+      {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+      {% include "includes/preserve_get.html" %}
+    </form>
+
+    <div id="analyzing-tip" style="display:none; margin: 0 0 12px; padding:10px 14px; border-radius:14px; background:#eff8ff; border:1px solid #b2ddff; color:#175cd3; font-size:0.9rem;">
+      当前正在分析中，请勿重复点击；完成后页面会自动返回结果。
+    </div>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom: 12px;">
+      <span style="font-size:0.88rem; color:#667085;">勾选左侧复选框后，点击「批量 GPT 分析」（已计算过的 ASIN 会覆盖更新）。</span>
+      <button type="submit" id="btn-batch-submit" form="form-gpt-batch" class="btn-pill btn-pill-primary"
+              onclick="return document.querySelectorAll('input[name=asins][form=form-gpt-batch]:checked').length > 0 || (alert('请至少勾选一个 ASIN'), false);">
+        批量 GPT 分析
+      </button>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table class="raw-table" style="width:100%; border-collapse:collapse; min-width:640px; font-size:0.88rem;">
+        <thead>
+          <tr>
+            <th style="width:40px; padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">选</th>
+            <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">ASIN</th>
+            <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">状态</th>
+            <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="main-row" style="border-bottom:1px solid #f0f0f5;">
+              <td style="padding:12px; vertical-align:middle;">
+                <input type="checkbox" name="asins" value="{{ row.orig.asin }}" form="form-gpt-batch" {% if row.is_processing %}disabled{% endif %}>
+              </td>
+              <td style="padding:12px; font-weight:600; vertical-align:middle;">{{ row.orig.asin }}</td>
+              <td style="padding:12px; vertical-align:middle;">
+                {% if row.is_processing %}
+                  <span style="color:#0071e3; font-size:0.85rem;">分析中...</span>
+                {% elif row.is_analyzed %}
+                  <span style="color:#027a48; font-size:0.85rem;">已计算</span>
+                {% else %}
+                  <span style="color:#b54708; font-size:0.85rem;">待分析</span>
+                {% endif %}
+              </td>
+              <td style="padding:12px; vertical-align:middle;">
+                <form method="post" action="{% url 'gpt_analysis' %}" style="display:inline;" class="single-analyze-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="single">
+                  <input type="hidden" name="asin" value="{{ row.orig.asin }}">
+                  {% if show_calculated %}<input type="hidden" name="show_calculated" value="1">{% endif %}
+                  {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit" class="btn-pill btn-pill-primary single-analyze-btn" style="padding:8px 16px; font-size:0.82rem;" {% if row.is_processing %}disabled{% endif %}>
+                    {% if row.is_processing %}分析中...{% else %}单个分析{% endif %}
+                  </button>
+                </form>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="4" style="padding:24px; text-align:center; color:#98a2b3;">
+                {% if search_q %}
+                  没有匹配「{{ search_q }}」的 ASIN。请调整关键字，或
+                  <a href="{% url 'gpt_analysis' %}{% if show_calculated %}?show_calculated=1{% endif %}" style="color:#0071e3;">清除搜索</a> 后重试。
+                {% elif show_calculated %}
+                  暂无原文本数据。
+                {% else %}
+                  当前没有待分析的 ASIN；若需对已计算 ASIN 重新分析，请勾选「显示已计算过的 ASIN」。
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs %}
+
+    <style>
+      .btn-pill {
+        border: none;
+        padding: 10px 26px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 0.88rem;
+        cursor: pointer;
+        transition: background 0.2s, box-shadow 0.2s;
+      }
+      .btn-pill-primary {
+        background: #f0f5ff;
+        color: #0071e3;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+      }
+      .btn-pill-primary:hover {
+        background: #dce9ff;
+      }
+      .main-row:hover td {
+        background: #fafafa;
+      }
+      .btn-pill:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+    </style>
+    <script>
+      (function () {
+        const tip = document.getElementById('analyzing-tip');
+        const batchForm = document.getElementById('form-gpt-batch');
+        const batchBtn = document.getElementById('btn-batch-submit');
+        const singleForms = document.querySelectorAll('.single-analyze-form');
+        const allBtns = document.querySelectorAll('.single-analyze-btn, #btn-batch-submit');
+
+        function setSubmittingState() {
+          if (tip) tip.style.display = 'block';
+          allBtns.forEach(btn => { btn.disabled = true; });
+        }
+
+        if (batchForm) {
+          batchForm.addEventListener('submit', function () {
+            setSubmittingState();
+          });
+        }
+        singleForms.forEach(form => {
+          form.addEventListener('submit', function () {
+            setSubmittingState();
+          });
+        });
+      })();
+    </script>
+  </div>
+{% endblock %}

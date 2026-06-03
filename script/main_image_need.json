@@ -1,0 +1,157 @@
+{
+  "report": {
+    "main_image": {
+      "recommended_composition": "正面微俯视15°，展示产品整体结构及包装盒",
+      "white_background_requirements": "纯白底(RGB 255,255,255)，无阴影、无反光、无环境元素",
+      "product_occupancy": "产品需占据画面85%以上",
+      "must_highlight_features": "抓取器的橙色防滑硅胶爪、折叠设计、磁性功能标识以及包装盒上的品牌信息",
+      "fabe_analysis": {
+        "feature": "产品为重型抓取器，具备磁性、折叠功能及防滑硅胶爪",
+        "advantage": "相比普通抓取器，功能更丰富，适用场景更广泛",
+        "benefit": "消费者可轻松抓取重物、小物件，且便于携带和存储"
+      },
+      "special_effects": "无",
+      "notes": "需确认包装盒上的文字是否为最终版本"
+    },
+    "image_2_core_selling_point": {
+      "recommended_composition": "多角度展示产品抓取不同物品的能力",
+      "scene_suggestion": "室内和户外场景，光线自然，背景简洁，突出产品抓取能力",
+      "selling_point_display": "通过抓取瓶子、球、工具等物品的动态瞬间展示抓取器的多功能性",
+      "text_overlay": {
+        "copy": "Multi-Use Grabber",
+        "position": "右上角",
+        "annotations": [
+          {
+            "label": "Non-Slip Silicone",
+            "description": "强调抓取器爪部的防滑硅胶设计"
+          },
+          {
+            "label": "Magnetic Tips",
+            "description": "展示抓取器磁性爪可吸附金属物品的功能"
+          }
+        ]
+      },
+      "fabe_analysis": {
+        "feature": "抓取器可抓取不同形状和材质的物品",
+        "advantage": "适用范围广，抓取稳定",
+        "benefit": "消费者可轻松完成多种抓取任务，提高效率"
+      },
+      "notes": "需确认是否需要补充更多抓取物品的展示"
+    },
+    "image_3_size_comparison": {
+      "composition": "抓取器与常见物品（如手掌、瓶子）的对比摆放方式",
+      "annotation_details": {
+        "dimensions": "40英寸全长，折叠后20英寸",
+        "reference_object": "手掌或标准瓶子",
+        "line_style": "简洁线条+数字标注"
+      },
+      "background": "浅色渐变或纯灰背景，保持专业感",
+      "fabe_analysis": {
+        "feature": "产品尺寸为40英寸，折叠后便于存储",
+        "advantage": "长尺寸适合高处抓取，折叠设计便于携带",
+        "benefit": "消费者可轻松存储和使用，适应不同场景需求"
+      },
+      "notes": "需确认是否需要补充更多尺寸对比物品"
+    },
+    "image_4_detail_closeup": {
+      "closeup_parts": [
+        {
+          "part_name": "抓取器爪部",
+          "method": "微距拍摄，突出硅胶防滑设计",
+          "annotation_text": "Non-Slip Silicone for Secure Grip"
+        },
+        {
+          "part_name": "磁性爪部",
+          "method": "局部放大标注，突出磁性功能",
+          "annotation_text": "Magnetic Tips for Metal Objects"
+        },
+        {
+          "part_name": "折叠铰链",
+          "method": "局部彩色保留，突出折叠设计",
+          "annotation_text": "Foldable Design for Easy Storage"
+        }
+      ],
+      "overall_annotation_style": "细引线+简短文字的风格描述",
+      "fabe_analysis": {
+        "feature": "细节展示抓取器的防滑、磁性和折叠功能",
+        "advantage": "功能设计精细，使用体验更佳",
+        "benefit": "消费者可享受更安全、便捷的使用体验"
+      },
+      "notes": "需确认是否需要补充更多细节展示"
+    },
+    "image_5_usage_steps": {
+      "display_method": "一张图内分区展示",
+      "steps": [
+        {
+          "step_number": 1,
+          "description": "展开抓取器，调整角度"
+        },
+        {
+          "step_number": 2,
+          "description": "使用抓取器抓取物品"
+        },
+        {
+          "step_number": 3,
+          "description": "折叠抓取器，便于存储"
+        }
+      ],
+      "auxiliary_elements": "箭头、编号、步骤标题等辅助元素描述",
+      "fabe_analysis": {
+        "feature": "抓取器的使用流程简单易懂",
+        "advantage": "操作便捷，适合不同年龄段用户",
+        "benefit": "消费者可快速掌握使用方法，提高效率"
+      },
+      "notes": "需确认是否需要补充更多使用场景"
+    },
+    "image_6_package_contents": {
+      "items": ["抓取器", "包装盒", "标签"],
+      "layout": "扁平排列，要求干净整洁",
+      "notes": "需确认是否有其他配件需要展示"
+    },
+    "image_7_function_breakdown": {
+      "display_method": "将产品分解成可视化模块或功能区块",
+      "composition_angle": "半俯视角，保证每个模块清楚可辨",
+      "modules": [
+        {
+          "number": 1,
+          "name": "爪部",
+          "function_description": "防滑硅胶设计，抓取稳定"
+        },
+        {
+          "number": 2,
+          "name": "铰链",
+          "function_description": "折叠设计，便于存储"
+        }
+      ],
+      "annotation_style": "编号 + 功能名称或简短说明",
+      "background": "浅色渐变或纯白",
+      "fabe_analysis": {
+        "feature": "模块化设计体现抓取器的多功能性",
+        "advantage": "结构清晰，功能明确",
+        "benefit": "消费者可快速理解产品功能，提高使用体验"
+      },
+      "notes": "需确认是否需要补充更多模块展示"
+    },
+    "image_8_extended_scene": {
+      "scene_description": "抓取器在家庭、户外等场景中的延伸使用",
+      "composition_angle": "侧面或45°角，突出产品在场景中的实际效果",
+      "lighting_atmosphere": "柔和自然光，制造温馨感",
+      "text_overlay": {
+        "copy": "Versatile Grabber Tool",
+        "position": "右下角"
+      },
+      "fabe_analysis": {
+        "feature": "场景扩展体现抓取器的多用途",
+        "advantage": "适用场景广泛，功能实用",
+        "benefit": "消费者可在不同环境下轻松使用产品"
+      },
+      "notes": "需确认是否需要补充更多场景展示"
+    },
+    "overall_design_spec": {
+      "color_palette": "主色#F57C00（橙色），辅色#000000（黑色）",
+      "font_style": "推荐的无衬线字体（如Montserrat）及排版规则",
+      "brand_uniformity": "logo出现的位置在右下角，最小安全边距为10px",
+      "notes": "需确认品牌字体和颜色是否符合最终要求"
+    }
+  }
+}

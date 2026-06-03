@@ -1,0 +1,432 @@
+{% extends 'base.html' %}
+{% load ask_rufus_tags %}
+{% block title %}Listing 面板 - ASIN Listing{% endblock %}
+
+{% block extra_head %}
+<style>
+  .lp-cell { max-height: 220px; overflow-y: auto; font-size: 0.84rem; line-height: 1.45; color: #344054; word-break: break-word; }
+  .lp-cell-rufus { max-height: 220px; }
+  .lp-rufus-item { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #eaecf0; }
+  .lp-rufus-item:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+  .lp-rufus-q { font-weight: 600; color: #101828; font-size: 0.82rem; margin-bottom: 4px; line-height: 1.4; }
+  .lp-rufus-a { color: #475467; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; }
+  .lp-muted { color: #98a2b3; font-size: 0.82rem; }
+  .del-btn {
+    background: #fef3f2; color: #b42318; border: 1px solid #fecdca; border-radius: 12px; font-weight: 600; cursor: pointer;
+  }
+  .del-btn:hover { background: #fee4e2; }
+  .lp-listing-cell { position: relative; min-width: 140px; max-width: 220px; }
+  .lp-listing-collapsed {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    padding: 8px 10px; border-radius: 12px; background: #fafafa; border: 1px solid #eef0f3;
+  }
+  .lp-listing-meta { font-size: 0.78rem; color: #667085; line-height: 1.35; word-break: break-all; }
+  .lp-listing-expand-btn {
+    border: none; background: #0071e3; color: #fff; font-weight: 600; font-size: 0.78rem;
+    padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  }
+  .lp-listing-expand-btn:hover { filter: brightness(1.05); }
+  .lp-listing-raw { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  #listing-md-modal { display: none; }
+  #listing-md-modal.is-open { display: block; }
+  #listing-md-modal .modal-overlay-inner {
+    position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,0.32); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  #listing-md-modal .modal-card {
+    background: #fff; border-radius: 22px; box-shadow: 0 20px 60px rgba(0,0,0,0.14);
+    width: min(920px, 100%); max-height: min(86vh, 900px); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #listing-md-modal .modal-header {
+    display: flex; align-items: center; justify-content: space-between; padding: 18px 22px 14px;
+    border-bottom: 1px solid #e8e8ed; flex-shrink: 0;
+  }
+  #listing-md-modal .modal-title { margin: 0; font-size: 1.1rem; font-weight: 600; color: #1d1d1f; }
+  #listing-md-modal .modal-close-btn {
+    background: none; border: none; font-size: 1.5rem; color: #86868b; cursor: pointer; line-height: 1; padding: 4px 8px;
+  }
+  #listing-md-modal .modal-close-btn:hover { color: #1d1d1f; }
+  #listing-md-modal .lp-markdown-body {
+    padding: 20px 24px 28px; overflow-y: auto; flex: 1; font-size: 0.92rem; line-height: 1.65; color: #344054;
+    white-space: normal; word-break: break-word;
+  }
+  #listing-md-modal .lp-markdown-body h1, #listing-md-modal .lp-markdown-body h2 { margin: 1.1em 0 0.45em; color: #1d1d1f; font-weight: 600; }
+  #listing-md-modal .lp-markdown-body h1 { font-size: 1.25rem; }
+  #listing-md-modal .lp-markdown-body h2 { font-size: 1.05rem; border-bottom: 1px solid #f0f0f5; padding-bottom: 6px; }
+  #listing-md-modal .lp-markdown-body h3 { font-size: 0.98rem; margin: 0.85em 0 0.35em; }
+  #listing-md-modal .lp-markdown-body p { margin: 0.5em 0; }
+  #listing-md-modal .lp-markdown-body ul, #listing-md-modal .lp-markdown-body ol { margin: 0.4em 0 0.6em 1.2em; }
+  #listing-md-modal .lp-markdown-body li { margin: 0.25em 0; }
+  #listing-md-modal .lp-markdown-body pre {
+    background: #f6f6f7; padding: 14px 16px; border-radius: 12px; overflow-x: auto; font-size: 0.82rem; margin: 0.75em 0;
+  }
+  #listing-md-modal .lp-markdown-body code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; }
+  #listing-md-modal .lp-markdown-body pre code { font-size: 0.8rem; }
+  #listing-md-modal .lp-markdown-body blockquote {
+    margin: 0.6em 0; padding: 8px 14px; border-left: 3px solid #0071e3; background: #f8fbff; color: #475467;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="apple-card" style="padding: 28px 32px;">
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 20px;">
+    <div>
+      <h2 class="card-title" style="margin-bottom:8px; border-bottom:0; padding-bottom:0;">Listing 面板</h2>
+    </div>
+    <span style="color:#86868b; font-size:0.9rem; white-space:nowrap;">共 {{ page_obj.paginator.count }} 条</span>
+  </div>
+
+  {% if messages %}
+    <div style="margin: 0 0 18px;">
+      {% for message in messages %}
+        <div style="padding:10px 14px;border-radius:14px;margin-bottom:10px;background:#f2f4f7;border:1px solid #e8e8ed;color:#1d1d1f;">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <form method="get" action="{% url 'listing_panel' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+    <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
+           style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+    <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
+    {% if search_q %}
+      <a href="{% url 'listing_panel' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+    {% endif %}
+  </form>
+
+  <form method="post" action="{% url 'batch_delete_analysis' %}" id="form-listing-panel-batch" style="margin-bottom:12px;">
+    {% csrf_token %}
+    <input type="hidden" name="redirect_to" value="listing_panel">
+    {% if search_q %}<input type="hidden" name="q" value="{{ search_q|escape }}">{% endif %}
+    {% include "includes/preserve_get.html" %}
+    <button type="submit" class="del-btn" style="padding:8px 16px;"
+            onclick="return document.querySelectorAll('input[name=asins][form=form-listing-panel-batch]:checked').length > 0 || (alert('请至少勾选一条记录'), false);">
+      批量删除分析记录
+    </button>
+  </form>
+
+  <div style="overflow-x:auto;">
+    <table class="listing-panel-table" style="width:100%; border-collapse:collapse; min-width:1100px; font-size:0.86rem;">
+      <thead>
+        <tr>
+          <th style="width:36px;padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;">选</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;white-space:nowrap;">ASIN</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:12%;">关键词</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:14%;">Rufus</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:18%;">VOC定位</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:18%;">差评改进方向</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:18%;">Listing</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;white-space:nowrap;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr style="border-bottom:1px solid #f0f0f5; vertical-align:top;">
+          <td style="padding:10px 8px;">
+            <input type="checkbox" name="asins" value="{{ row.asin }}" form="form-listing-panel-batch">
+          </td>
+          <td style="padding:10px 8px; font-weight:600; color:#0071e3;">{{ row.asin }}</td>
+          <td style="padding:10px 8px;">
+            {% if row.orig %}
+              {% if row.keywords_list %}
+                <div class="lp-cell" title="{{ row.keywords_list|join:', ' }}">
+                  {% for k in row.keywords_list|slice:':16' %}
+                    <span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;border-radius:999px;background:#f0f5ff;font-size:0.78rem;">{{ k }}</span>
+                  {% endfor %}
+                  {% if row.keywords_list|length > 16 %}<span class="lp-muted">…</span>{% endif %}
+                </div>
+              {% else %}
+                <span class="lp-muted">暂无</span>
+              {% endif %}
+            {% else %}
+              <span class="lp-muted">无原文本行</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 8px;">
+            {% if row.orig and row.ask_rufus %}
+              <div class="lp-cell lp-cell-rufus">
+                {% for item in row.ask_rufus|ask_rufus_items %}
+                  <div class="lp-rufus-item">
+                    <div class="lp-rufus-q">{{ item.question }}</div>
+                    {% if item.answer %}
+                      <div class="lp-rufus-a">{{ item.answer|truncatechars:280|linebreaksbr }}</div>
+                    {% endif %}
+                  </div>
+                {% empty %}
+                  <span class="lp-muted">暂无</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <span class="lp-muted">{% if not row.orig %}无原文本行{% else %}暂无{% endif %}</span>
+            {% endif %}
+          </td>
+          <td style="padding:10px 8px;"><div class="lp-cell">{% if row.voc_positioning %}{{ row.voc_positioning|truncatechars:420|linebreaksbr }}{% else %}<span class="lp-muted">（无，请先完成差异化分析或检查小节标题「VOC定位」）</span>{% endif %}</div></td>
+          <td style="padding:10px 8px;"><div class="lp-cell">{% if row.negative_direction %}{{ row.negative_direction|truncatechars:420|linebreaksbr }}{% else %}<span class="lp-muted">（无）</span>{% endif %}</div></td>
+          <td style="padding:10px 8px; vertical-align: top;">
+            <div class="lp-listing-cell">
+              {% if row.listing %}
+                <div class="lp-listing-collapsed">
+                  <span class="lp-listing-meta">已生成 · {{ row.listing|length }} 字符</span>
+                  <button type="button" class="lp-listing-expand-btn"
+                          data-asin="{{ row.asin|escape }}"
+                          data-md-id="lp-md-{{ row.asin|escape }}">展开</button>
+                </div>
+                {% with md_sid='lp-md-'|add:row.asin %}
+                {{ row.listing_md|json_script:md_sid }}
+                {% endwith %}
+                <textarea class="lp-listing-raw" readonly aria-label="Listing 原文">{{ row.listing }}</textarea>
+              {% else %}
+                <span class="lp-muted">（尚未生成）</span>
+              {% endif %}
+            </div>
+          </td>
+          <td style="padding:10px 8px; white-space:nowrap;">
+            <form method="post" action="{% url 'delete_analysis_row' row.asin %}" style="display:inline;" onsubmit="return confirm('确定删除该 ASIN 的分析记录？');">
+              {% csrf_token %}
+              <input type="hidden" name="redirect_to" value="listing_panel">
+              {% if search_q %}<input type="hidden" name="q" value="{{ search_q|escape }}">{% endif %}
+              {% include "includes/preserve_get.html" %}
+              <button type="submit" class="del-btn" style="padding:6px 12px;font-size:0.8rem;">删除</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8" style="padding:40px;text-align:center;color:#86868b;">暂无分析记录。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs %}
+</div>
+
+<div id="listing-md-modal" aria-hidden="true">
+  <div class="modal-overlay-inner" data-listing-md-dismiss>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="listing-md-title" onclick="event.stopPropagation();" style="min-width: 80%;max-height: 100%">
+      <div class="modal-header">
+        <h3 class="modal-title" id="listing-md-title">Listing（Markdown）</h3>
+        <button type="button" class="modal-close-btn listing-md-close" aria-label="关闭">&times;</button>
+      </div>
+      <div class="lp-markdown-body" id="listing-md-body"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+(function () {
+  var modal = document.getElementById('listing-md-modal');
+  var bodyEl = document.getElementById('listing-md-body');
+  var titleEl = document.getElementById('listing-md-title');
+  if (!modal || !bodyEl) return;
+
+  var JSON_KEYS_ORDER = ['Listing标题', '五点描述', '产品描述', '后台搜索词', 'APlus内容建议', '广告与关键词策略'];
+
+  function jsonListingToMarkdown(obj) {
+    var lines = [];
+    var seen = {};
+    function valueToMd(v, depth) {
+      depth = depth || 0;
+      var out = [];
+      if (v == null) return out;
+      if (typeof v === 'string') {
+        v.split('\n').forEach(function (para) {
+          var p = para.trim();
+          if (p) out.push(p);
+        });
+        out.push('');
+        return out;
+      }
+      if (Array.isArray(v)) {
+        v.forEach(function (item, i) {
+          if (item && typeof item === 'object' && !Array.isArray(item)) {
+            out.push((i + 1) + '.');
+            Object.keys(item).forEach(function (sk) {
+              var body = valueToMd(item[sk], depth + 1).join('\n').trim().replace(/\n/g, ' ');
+              out.push('   - **' + sk + '**：' + (body || ''));
+            });
+            out.push('');
+          } else if (item && typeof item === 'object') {
+            out.push((i + 1) + '. ' + valueToMd(item, depth + 1).join('\n').trim());
+            out.push('');
+          } else {
+            out.push((i + 1) + '. ' + String(item));
+          }
+        });
+        if (out.length && out[out.length - 1] !== '') out.push('');
+        return out;
+      }
+      if (typeof v === 'object') {
+        Object.keys(v).forEach(function (k) {
+          var val = v[k];
+          if (val && typeof val === 'object') {
+            out.push('### ' + k);
+            out.push('');
+            out.push.apply(out, valueToMd(val, depth + 1));
+          } else {
+            out.push('**' + k + '**：' + val);
+            out.push('');
+          }
+        });
+        return out;
+      }
+      out.push(String(v));
+      out.push('');
+      return out;
+    }
+    function pushSection(k, v) {
+      lines.push('## ' + k);
+      lines.push('');
+      lines.push.apply(lines, valueToMd(v, 0));
+    }
+    JSON_KEYS_ORDER.forEach(function (k) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) {
+        seen[k] = true;
+        pushSection(k, obj[k]);
+      }
+    });
+    Object.keys(obj).forEach(function (k) {
+      if (!seen[k]) pushSection(k, obj[k]);
+    });
+    return lines.join('\n').trim();
+  }
+
+  function repairListingJsonText(text) {
+    var t = text || '';
+    var m = t.match(/"五点描述"\s*:\s*\[/);
+    if (!m) return t;
+    var arrStart = m.index + m[0].length;
+    var keys = ['产品描述', '后台搜索词', 'APlus内容建议', '广告与关键词策略'];
+    var bestPos = -1;
+    keys.forEach(function (key) {
+      var re = new RegExp('"' + key + '"\\s*:');
+      var rest = t.slice(arrStart);
+      var km = rest.match(re);
+      if (!km) return;
+      var pos = arrStart + km.index;
+      if (t.slice(arrStart, pos).indexOf(']') === -1) {
+        if (bestPos === -1 || pos < bestPos) bestPos = pos;
+      }
+    });
+    if (bestPos === -1) return t;
+    var before = t.slice(0, bestPos).replace(/,\s*$/, '');
+    return before + '],\n' + t.slice(bestPos);
+  }
+
+  function extractJsonObject(text) {
+    var t = (text || '').trim();
+    if (!t) return null;
+    function tryParse(src) {
+      try {
+        var j = JSON.parse(src);
+        if (j && typeof j === 'object' && !Array.isArray(j)) return j;
+      } catch (e) { /* continue */ }
+      return null;
+    }
+    var j0 = tryParse(t);
+    if (j0) return j0;
+    var repaired = repairListingJsonText(t);
+    if (repaired !== t) {
+      var j1 = tryParse(repaired);
+      if (j1) return j1;
+      t = repaired;
+    }
+    var fence = t.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fence) {
+      try {
+        var j2 = JSON.parse(fence[1].trim());
+        if (j2 && typeof j2 === 'object' && !Array.isArray(j2)) return j2;
+      } catch (e2) { /* continue */ }
+    }
+    var start = t.indexOf('{');
+    var end = t.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        var j3 = JSON.parse(t.slice(start, end + 1));
+        if (j3 && typeof j3 === 'object' && !Array.isArray(j3)) return j3;
+      } catch (e3) { /* continue */ }
+    }
+    return null;
+  }
+
+  function rawToMarkdown(raw) {
+    var t = (raw || '').trim();
+    if (!t) return '';
+    var j = extractJsonObject(t);
+    if (j) return jsonListingToMarkdown(j);
+    return raw;
+  }
+
+  function renderMarkdown(text) {
+    var src = text || '';
+    if (window.marked) {
+      if (typeof window.marked.parse === 'function') {
+        return window.marked.parse(src, { breaks: true });
+      }
+      if (typeof window.marked === 'function') {
+        return window.marked(src, { breaks: true });
+      }
+    }
+    return src.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+  }
+
+  function looksLikeJsonBlock(s) {
+    return /^\s*[\[{]/.test(String(s || '').trim());
+  }
+
+  function openModal(asin, raw, precomputedMd) {
+    var md = String(precomputedMd || '').trim();
+    if (!md || looksLikeJsonBlock(md)) {
+      md = rawToMarkdown(raw || precomputedMd || '');
+    }
+    bodyEl.innerHTML = renderMarkdown(md);
+    if (titleEl) titleEl.textContent = 'Listing（Markdown）· ' + (asin || '');
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    bodyEl.innerHTML = '';
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.lp-listing-expand-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var cell = btn.closest('.lp-listing-cell');
+      if (!cell) return;
+      var preMd = '';
+      var mdId = btn.getAttribute('data-md-id');
+      if (mdId) {
+        var scriptEl = document.getElementById(mdId);
+        if (scriptEl && scriptEl.textContent) {
+          try {
+            preMd = JSON.parse(scriptEl.textContent);
+          } catch (e) { /* fallback */ }
+        }
+      }
+      var ta = cell.querySelector('.lp-listing-raw');
+      var raw = ta ? ta.value : '';
+      openModal(btn.getAttribute('data-asin') || '', raw, preMd);
+    });
+  });
+
+  modal.querySelectorAll('.listing-md-close').forEach(function (b) {
+    b.addEventListener('click', closeModal);
+  });
+  modal.querySelectorAll('[data-listing-md-dismiss]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      if (e.target === el) closeModal();
+    });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+  });
+})();
+</script>
+{% endblock %}

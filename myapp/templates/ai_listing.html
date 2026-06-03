@@ -1,0 +1,635 @@
+{% extends 'base.html' %}
+{% block title %}AI-Listing - ASIN Lens{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ai-listing-wrap {
+        padding-bottom: 220px;
+    }
+    .ai-listing-table-wrap {
+        overflow-x: auto;
+    }
+    .ai-listing-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 1480px;
+        font-size: 0.86rem;
+    }
+    .ai-listing-ta {
+        width: 100%;
+        min-width: 120px;
+        min-height: 88px;
+        max-height: 220px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid #e8e8ed;
+        font-family: inherit;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: #344054;
+        resize: vertical;
+        box-sizing: border-box;
+    }
+    .ai-listing-ta:focus {
+        outline: none;
+        border-color: #0071e3;
+        box-shadow: 0 0 0 2px rgba(0, 113, 227, 0.12);
+    }
+    .ai-listing-table th, .ai-listing-table td {
+        padding: 10px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e8e8ed;
+        vertical-align: top;
+    }
+    .ai-listing-table th {
+        color: #667085;
+        font-weight: 600;
+        white-space: nowrap;
+        background: #fafafa;
+    }
+    .ai-listing-save-cell {
+        white-space: nowrap;
+        width: 1%;
+        vertical-align: top;
+    }
+    .ai-listing-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+    }
+    .btn-row-history {
+        border: 1px solid #d0d5dd;
+        background: #fff;
+        color: #344054;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.78rem;
+    }
+    .btn-row-history:hover {
+        background: #f9fafb;
+        border-color: #98a2b3;
+    }
+    #ai-listing-history-modal { display: none; }
+    #ai-listing-history-modal.is-open { display: block; }
+    #ai-listing-history-modal .ai-hist-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        background: rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+    }
+    #ai-listing-history-modal .ai-hist-card {
+        background: #fff;
+        border-radius: 20px;
+        width: min(960px, 100%);
+        max-height: min(88vh, 900px);
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.14);
+    }
+    #ai-listing-history-modal .ai-hist-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 20px 12px;
+        border-bottom: 1px solid #e8e8ed;
+        flex-shrink: 0;
+    }
+    #ai-listing-history-modal .ai-hist-title { margin: 0; font-size: 1.05rem; font-weight: 600; color: #1d1d1f; }
+    #ai-listing-history-modal .ai-hist-close {
+        border: none;
+        background: none;
+        font-size: 1.5rem;
+        color: #86868b;
+        cursor: pointer;
+        line-height: 1;
+        padding: 4px 8px;
+    }
+    #ai-listing-history-modal .ai-hist-close:hover { color: #1d1d1f; }
+    #ai-listing-history-modal .ai-hist-body {
+        padding: 14px 20px 22px;
+        overflow-y: auto;
+        flex: 1;
+        font-size: 0.86rem;
+    }
+    #ai-listing-history-modal .ai-hist-empty { color: #98a2b3; text-align: center; padding: 32px 12px; }
+    #ai-listing-history-modal .ai-hist-item {
+        border: 1px solid #e8e8ed;
+        border-radius: 14px;
+        padding: 14px 16px;
+        margin-bottom: 14px;
+        background: #fafafa;
+    }
+    #ai-listing-history-modal .ai-hist-item-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin: 0;
+        padding: 0;
+        border: none;
+        font-size: 0.8rem;
+        color: #667085;
+    }
+    #ai-listing-history-modal .ai-hist-item-head strong { color: #1d1d1f; }
+    #ai-listing-history-modal .ai-hist-item-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    #ai-listing-history-modal .ai-hist-meta-extra {
+        font-size: 0.78rem;
+        color: #98a2b3;
+        margin: 0;
+    }
+    #ai-listing-history-modal .ai-hist-toggle {
+        align-self: flex-start;
+        border: 1px solid #0071e3;
+        background: #fff;
+        color: #0071e3;
+        font-weight: 600;
+        font-size: 0.78rem;
+        padding: 7px 14px;
+        border-radius: 999px;
+        cursor: pointer;
+    }
+    #ai-listing-history-modal .ai-hist-toggle:hover {
+        background: #f0f5ff;
+    }
+    #ai-listing-history-modal .ai-hist-item-detail {
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 1px dashed #e8e8ed;
+    }
+    #ai-listing-history-modal .ai-hist-item-detail[hidden] {
+        display: none !important;
+    }
+    #ai-listing-history-modal .ai-hist-dl { margin: 0; }
+    #ai-listing-history-modal .ai-hist-dl dt {
+        font-weight: 600;
+        color: #475467;
+        margin-top: 10px;
+        font-size: 0.76rem;
+    }
+    #ai-listing-history-modal .ai-hist-dl dt:first-child { margin-top: 0; }
+    #ai-listing-history-modal .ai-hist-dl dd {
+        margin: 4px 0 0 0;
+        color: #344054;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    #ai-listing-history-modal .ai-hist-pre {
+        margin: 4px 0 0 0;
+        padding: 10px 12px;
+        background: #fff;
+        border: 1px solid #e8e8ed;
+        border-radius: 10px;
+        font-size: 0.78rem;
+        overflow-x: auto;
+        max-height: 888px;
+        overflow-y: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    .btn-row-save {
+        border: none;
+        background: #f2f4f7;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.82rem;
+    }
+    .btn-row-save:hover {
+        background: #e8ecf1;
+    }
+    .ai-listing-dock {
+        position: fixed;
+        left: 50%;
+        bottom: 20px;
+        transform: translateX(-50%);
+        z-index: 90;
+        width: min(760px, calc(100vw - 32px));
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #e8e8ed;
+        border-radius: 18px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+        backdrop-filter: blur(12px);
+    }
+    .ai-listing-dock-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 16px;
+        border-bottom: 1px solid #f2f4f7;
+    }
+    .ai-listing-dock-head h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #1d1d1f;
+    }
+    .ai-listing-dock-meta {
+        font-size: 0.8rem;
+        color: #667085;
+    }
+    .ai-listing-dock-body {
+        padding: 12px 16px 16px;
+    }
+    .ai-listing-dock-body.collapsed {
+        display: none;
+    }
+    .ai-listing-dock textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        border: 1px solid #e8e8ed;
+        font-family: inherit;
+        font-size: 0.9rem;
+        resize: vertical;
+        margin-bottom: 12px;
+    }
+    .ai-listing-dock-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+    .btn-dock-toggle {
+        border: none;
+        background: #f2f4f7;
+        color: #344054;
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    .btn-dock-toggle:hover {
+        background: #e8ecf1;
+    }
+    .btn-dock-submit {
+        border: none;
+        background: #0071e3;
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 999px;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.88rem;
+    }
+    .btn-dock-submit:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+    }
+    .ai-hidden-forms {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="apple-card ai-listing-wrap" style="padding: 28px 32px;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 18px;">
+        <div>
+            <h2 class="card-title" style="margin-bottom:8px; border-bottom:0; padding-bottom:0;">AI-Listing</h2>
+            <p style="margin:0; color:#86868b; font-size:0.9rem; max-width:960px;">
+                表格内各列为生成 Listing 时的输入，均可直接编辑；编辑后点击该行<strong>保存</strong>。
+                未保存的 VOC/差评/差异化建议仍会以分析概览中的抽取结果为初值；<strong>材质与补充</strong> 默认为「待定」，可自行修改。
+                底部选择 ASIN 并填写补充说明后点「生成 Listing」，将把<strong>当前行「材质与补充」</strong>与<strong>底部补充说明</strong>合并保存到原文本，并调用模型；结果以 <strong>JSON</strong> 分节写入<strong>分析结果概览</strong>中的 Listing 字段。每次成功生成会在<strong>历史记录</strong>中留档（含当时各列输入与操作用户）。
+            </p>
+        </div>
+        <span style="color:#86868b; font-size:0.9rem;">共 {{ page_obj.paginator.count }} 条</span>
+    </div>
+
+    {% if messages %}
+    <div style="margin: 0 0 18px;">
+        {% for message in messages %}
+        <div style="padding:10px 14px;border-radius:14px;margin-bottom:10px;background:{% if message.tags == 'success' %}#ecfdf3{% elif message.tags == 'error' %}#fef3f2{% else %}#f2f4f7{% endif %};border:1px solid #e8e8ed;color:#1d1d1f;">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="get" action="{% url 'ai_listing' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+        <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
+               style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;">
+        <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;border-radius: 100px;">搜索</button>
+        {% if search_q %}
+        <a href="{% url 'ai_listing' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+        {% endif %}
+    </form>
+
+    <div class="ai-hidden-forms" aria-hidden="true">
+        {% for row in rows %}
+        <form id="ai-save-{{ forloop.counter0 }}" method="post" action="{% url 'ai_listing' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save_listing_inputs">
+            <input type="hidden" name="asin" value="{{ row.asin }}">
+            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+            {% include "includes/preserve_get.html" %}
+        </form>
+        {% endfor %}
+    </div>
+
+    <div class="ai-listing-table-wrap">
+        <table class="ai-listing-table">
+            <thead>
+            <tr>
+                <th style="width:40px;">选</th>
+                <th style="white-space:nowrap;">ASIN</th>
+                <th style="min-width:140px;">关键词</th>
+                <th style="min-width:180px;">Rufus（JSON）</th>
+                <th style="min-width:160px;">VOC定位</th>
+                <th style="min-width:160px;">差评改进方向</th>
+                <th style="min-width:160px;">差异化建议</th>
+                <th style="min-width:140px;">材质与补充</th>
+                <th style="width:1%;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+            <tr data-asin="{{ row.asin }}">
+                <td>
+                    <input type="radio" name="asin_pick" value="{{ row.asin }}" form="form-ai-listing-dock"
+                           class="asin-pick-radio">
+                </td>
+                <td><strong style="color:#0071e3;">{{ row.asin }}</strong></td>
+                <td>
+                    <textarea class="ai-listing-ta" name="keywords_text" form="ai-save-{{ forloop.counter0 }}" rows="4" placeholder="每行一个关键词，或用英文逗号分隔">{{ row.keywords_text }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-listing-ta" name="ask_rufus_json" form="ai-save-{{ forloop.counter0 }}" rows="5" placeholder='JSON 对象，如 {"问":"答"}'>{{ row.ask_rufus_json }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-listing-ta" name="voc_positioning" form="ai-save-{{ forloop.counter0 }}" rows="4">{{ row.voc_positioning }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-listing-ta" name="negative_direction" form="ai-save-{{ forloop.counter0 }}" rows="4">{{ row.negative_direction }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-listing-ta" name="cluster_suggestion" form="ai-save-{{ forloop.counter0 }}" rows="4">{{ row.cluster_suggestion }}</textarea>
+                </td>
+                <td>
+                    <textarea class="ai-listing-ta" name="material_supplement" form="ai-save-{{ forloop.counter0 }}" rows="3" placeholder="待定">{{ row.material_supplement }}</textarea>
+                </td>
+                <td class="ai-listing-save-cell">
+                    <div class="ai-listing-actions">
+                        <button type="submit" class="btn-row-save" form="ai-save-{{ forloop.counter0 }}">保存</button>
+                        <button type="button" class="btn-row-history" data-history-url="{% url 'ai_listing_history' row.asin %}">历史记录</button>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="9" style="padding:40px;text-align:center;color:#86868b;">暂无分析记录，请先在「AI 差异化分析」中完成分析。</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs align="end" %}
+</div>
+
+<div id="ai-listing-history-modal" aria-hidden="true">
+    <div class="ai-hist-overlay" data-ai-hist-dismiss>
+        <div class="ai-hist-card" role="dialog" aria-modal="true" aria-labelledby="ai-hist-title" onclick="event.stopPropagation();" style="min-height: 100%;min-width: 1600px">
+            <div class="ai-hist-head">
+                <h3 class="ai-hist-title" id="ai-hist-title">Listing 生成历史</h3>
+                <button type="button" class="ai-hist-close" data-ai-hist-close aria-label="关闭">&times;</button>
+            </div>
+            <div class="ai-hist-body" id="ai-hist-body"></div>
+        </div>
+    </div>
+</div>
+
+<form method="post" action="{% url 'ai_listing' %}" id="form-ai-listing-dock" class="ai-listing-dock">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="generate_listing">
+    {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+    {% include "includes/preserve_get.html" %}
+    <input type="hidden" name="asin" id="dock-asin-hidden" value="">
+    <input type="hidden" name="material_supplement" id="dock-material-hidden" value="">
+    <div class="ai-listing-dock-head">
+        <div>
+            <h3>生成 Listing</h3>
+            <div class="ai-listing-dock-meta">先勾选上方 ASIN；提交时会将<strong>该行「材质与补充」</strong>与<strong>底部补充说明</strong>合并写入原文本，再调用模型生成 JSON Listing。</div>
+        </div>
+        <button type="button" class="btn-dock-toggle" id="dock-toggle-expand" aria-expanded="true">收起</button>
+    </div>
+    <div class="ai-listing-dock-body" id="dock-body">
+        <label for="user_notes" style="font-size:0.8rem;font-weight:600;color:#667085;display:block;margin-bottom:6px;">补充说明（传给模型）</label>
+        <textarea name="user_notes" id="user_notes" placeholder="例如：主打人群、必须强调的材质/认证、需要避开的表述、竞品差异点等。"></textarea>
+        <div class="ai-listing-dock-actions">
+            <button type="submit" class="btn-dock-submit" id="dock-submit-btn">生成 Listing</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+    var form = document.getElementById('form-ai-listing-dock');
+    var hiddenAsin = document.getElementById('dock-asin-hidden');
+    var hiddenMaterial = document.getElementById('dock-material-hidden');
+    var radios = document.querySelectorAll('.asin-pick-radio');
+    var toggle = document.getElementById('dock-toggle-expand');
+    var dockBody = document.getElementById('dock-body');
+    var submitBtn = document.getElementById('dock-submit-btn');
+
+    function syncAsin() {
+        var c = document.querySelector('.asin-pick-radio:checked');
+        if (hiddenAsin) hiddenAsin.value = c ? c.value : '';
+    }
+    radios.forEach(function (r) {
+        r.addEventListener('change', syncAsin);
+    });
+    syncAsin();
+
+    if (toggle && dockBody) {
+        toggle.addEventListener('click', function () {
+            var collapsed = dockBody.classList.toggle('collapsed');
+            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            toggle.textContent = collapsed ? '展开' : '收起';
+        });
+    }
+
+    function syncMaterialFromRow() {
+        if (!hiddenMaterial) return;
+        var r = document.querySelector('.asin-pick-radio:checked');
+        if (!r) return;
+        var tr = r.closest('tr');
+        if (!tr) return;
+        var ta = tr.querySelector('textarea[name="material_supplement"]');
+        if (ta) hiddenMaterial.value = ta.value;
+    }
+
+    if (form) {
+        form.addEventListener('submit', function () {
+            syncAsin();
+            if (!hiddenAsin || !hiddenAsin.value.trim()) {
+                alert('请先在表格中选择 ASIN。');
+                return false;
+            }
+            syncMaterialFromRow();
+            if (submitBtn) submitBtn.disabled = true;
+        });
+    }
+})();
+</script>
+<script>
+(function () {
+    var modal = document.getElementById('ai-listing-history-modal');
+    var bodyEl = document.getElementById('ai-hist-body');
+    var titleEl = document.getElementById('ai-hist-title');
+    if (!modal || !bodyEl) return;
+
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function safeJson(obj) {
+        try {
+            return JSON.stringify(obj, null, 2);
+        } catch (e) {
+            return String(obj);
+        }
+    }
+
+    function closeHist() {
+        modal.classList.remove('is-open');
+        modal.setAttribute('aria-hidden', 'true');
+        bodyEl.innerHTML = '';
+        document.body.style.overflow = '';
+    }
+
+    function openHist() {
+        modal.classList.add('is-open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function renderLoading() {
+        bodyEl.innerHTML = '<p class="ai-hist-empty">加载中…</p>';
+    }
+
+    function renderError(msg) {
+        bodyEl.innerHTML = '<p class="ai-hist-empty">' + escapeHtml(msg || '加载失败') + '</p>';
+    }
+
+    function listingCharCount(s) {
+        if (s == null || s === '') return 0;
+        return String(s).length;
+    }
+
+    function renderItems(data) {
+        var items = data.items || [];
+        if (!items.length) {
+            bodyEl.innerHTML = '<p class="ai-hist-empty">暂无生成记录（成功点击「生成 Listing」后才会写入历史）。</p>';
+            return;
+        }
+        var html = '';
+        items.forEach(function (it) {
+            var nListing = listingCharCount(it.listing);
+            html += '<article class="ai-hist-item">';
+            html += '<div class="ai-hist-item-bar">';
+            html += '<div class="ai-hist-item-head" style="color: red">';
+            html += '<span><strong>时间</strong> ' + escapeHtml(it.created_at) + '</span>';
+            html += '<span><strong>用户</strong> ' + escapeHtml(it.generated_by_username) + '</span>';
+            html += '</div>';
+            html += '<p class="ai-hist-meta-extra">本记录含关键词、Rufus、VOC、差评改进、差异化、材质与 Listing 全文；默认已折叠。</p>';
+            html += '<p class="ai-hist-meta-extra">Listing 输出约 ' + nListing + ' 字符。</p>';
+            html += '<button type="button" class="ai-hist-toggle" aria-expanded="false">展示全部信息</button>';
+            html += '</div>';
+            html += '<div class="ai-hist-item-detail" hidden>';
+            html += '<dl class="ai-hist-dl">';
+            html += '<dt>关键词</dt><dd><pre class="ai-hist-pre">' + escapeHtml(safeJson(it.keywords)) + '</pre></dd>';
+            html += '<dt>Rufus（Ask Rufus）</dt><dd><pre class="ai-hist-pre">' + escapeHtml(safeJson(it.ask_rufus)) + '</pre></dd>';
+            html += '<dt>VOC定位</dt><dd>' + escapeHtml(it.voc_positioning) + '</dd>';
+            html += '<dt>差评改进方向</dt><dd>' + escapeHtml(it.negative_direction) + '</dd>';
+            html += '<dt>差异化建议</dt><dd>' + escapeHtml(it.cluster_suggestion) + '</dd>';
+            html += '<dt>材质与补充</dt><dd>' + escapeHtml(it.material_supplement) + '</dd>';
+            html += '<dt>Listing</dt><dd><pre class="ai-hist-pre">' + escapeHtml(it.listing) + '</pre></dd>';
+            html += '</dl></div></article>';
+        });
+        bodyEl.innerHTML = html;
+    }
+
+    bodyEl.addEventListener('click', function (e) {
+        var btn = e.target.closest('.ai-hist-toggle');
+        if (!btn || !bodyEl.contains(btn)) return;
+        var art = btn.closest('.ai-hist-item');
+        if (!art) return;
+        var det = art.querySelector('.ai-hist-item-detail');
+        var expanded = btn.getAttribute('aria-expanded') === 'true';
+        var next = !expanded;
+        btn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        if (det) det.hidden = !next;
+        btn.textContent = next ? '收起全部信息' : '展示全部信息';
+    });
+
+    document.querySelectorAll('.btn-row-history').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var url = btn.getAttribute('data-history-url');
+            if (!url) return;
+            if (titleEl) titleEl.textContent = 'Listing 生成历史';
+            openHist();
+            renderLoading();
+            fetch(url, { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.ok) {
+                        renderError(data.error || '请求失败');
+                        return;
+                    }
+                    if (titleEl) titleEl.textContent = 'Listing 生成历史 · ' + (data.asin || '');
+                    renderItems(data);
+                })
+                .catch(function () {
+                    renderError('网络或服务器错误');
+                });
+        });
+    });
+
+    modal.querySelectorAll('[data-ai-hist-close]').forEach(function (b) {
+        b.addEventListener('click', closeHist);
+    });
+    modal.querySelectorAll('[data-ai-hist-dismiss]').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+            if (e.target === el) closeHist();
+        });
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && modal.classList.contains('is-open')) closeHist();
+    });
+})();
+</script>
+{% endblock %}

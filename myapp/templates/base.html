@@ -1,0 +1,475 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ASIN 分析平台{% endblock %}</title>
+    <link rel="shortcut icon" href="{% static 'images/ro68s-mnkch-001.ico' %}" type="image/x-icon" style="border-radius: 80%;">
+    <style>
+        /* ========== 苹果风格全局样式 ========== */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* 顶部导航 —— 毛玻璃效果 */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(20px);
+            background-color: rgba(255, 255, 255, 0.8);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-logo a {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1d1d1f;
+            text-decoration: none;
+            letter-spacing: -0.3px;
+        }
+
+        .nav-links a {
+            margin-left: 32px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #555;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover {
+            color: #0071e3;
+        }
+
+        .nav-links a.nav-active {
+            color: #0071e3;
+            font-weight: 600;
+            position: relative;
+        }
+
+        .nav-links a.nav-active::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -18px;
+            height: 2px;
+            background: #0071e3;
+            border-radius: 2px;
+        }
+        .nav-user {
+            margin-left: 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #e8e8ed;
+            background: #fff;
+            font-size: 0.78rem;
+            color: #344054;
+            vertical-align: middle;
+        }
+        .nav-avatar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #dce9ff;
+            color: #004eeB;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-transform: uppercase;
+            font-size: 0.76rem;
+        }
+        .nav-user-role {
+            color: #667085;
+            font-weight: 600;
+        }
+
+        /* 审批页待处理数量角标 */
+        .nav-link-with-badge {
+            display: inline-flex !important;
+            align-items: center;
+            gap: 6px;
+            margin-left: 32px;
+        }
+        .nav-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+            height: 18px;
+            padding: 0 5px;
+            border-radius: 9px;
+            background: #ff3b30;
+            color: #fff;
+            font-size: 0.68rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        /* 用户头像下拉菜单 */
+        .nav-user-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            margin-left: 18px;
+            vertical-align: middle;
+        }
+        .nav-user-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #e8e8ed;
+            background: #fff;
+            font-size: 0.78rem;
+            color: #344054;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .nav-user-trigger:hover {
+            border-color: #d0d5dd;
+            background: #fafafa;
+        }
+        .nav-user-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            min-width: 160px;
+            padding: 8px 0;
+            background: #fff;
+            border: 1px solid #e8e8ed;
+            border-radius: 14px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+            z-index: 200;
+        }
+        .nav-user-dropdown.open {
+            display: block;
+        }
+        .nav-user-dropdown a {
+            display: block;
+            padding: 10px 16px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: #1d1d1f;
+            text-decoration: none;
+        }
+        .nav-user-dropdown a:hover {
+            background: #f5f5f7;
+            color: #0071e3;
+        }
+
+        /* 主内容区 */
+        .main-content {
+            max-width: 2560px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+
+        /* 卡片容器 */
+        .apple-card {
+            background: #ffffff;
+            border-radius: 22px;
+            padding: 36px 40px;
+            margin-bottom: 28px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.03);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .apple-card:hover {
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+            transform: translateY(-1px);
+        }
+
+        .card-title {
+            font-size: 1.7rem;
+            font-weight: 600;
+            letter-spacing: -0.4px;
+            color: #1d1d1f;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #e8e8ed;
+            padding-bottom: 14px;
+        }
+
+        .card-subtitle {
+            font-size: 1rem;
+            font-weight: 500;
+            color: #86868b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 14px;
+        }
+
+        /* 字段行 */
+        .field-group {
+            margin-bottom: 24px;
+        }
+
+        .field-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #86868b;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 6px;
+        }
+
+        .field-value {
+            font-size: 1rem;
+            color: #1d1d1f;
+            background: #f9f9fb;
+            padding: 12px 18px;
+            border-radius: 14px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        /* 建议列表 */
+        .suggestions-list {
+            list-style: none;
+            counter-reset: suggestion-counter;
+        }
+
+        .suggestions-list li {
+            counter-increment: suggestion-counter;
+            position: relative;
+            padding-left: 44px;
+            margin-bottom: 16px;
+            font-size: 0.98rem;
+        }
+
+        .suggestions-list li::before {
+            content: counter(suggestion-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 28px;
+            height: 28px;
+            background: #0071e3;
+            color: #fff;
+            border-radius: 50%;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 页脚 */
+        .footer {
+            text-align: center;
+            color: #86868b;
+            font-size: 0.8rem;
+            padding: 32px 0;
+        }
+
+        /* 全站 AI 生图进度浮窗 */
+        .ai-gen-progress-panel {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            z-index: 1200;
+            display: none;
+            width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+        .ai-gen-progress-panel.is-visible {
+            display: block;
+            pointer-events: auto;
+        }
+        .ai-gen-progress-inner {
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid #e8e8ed;
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
+            backdrop-filter: blur(12px);
+            overflow: hidden;
+        }
+        .ai-gen-progress-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 10px 14px;
+            border-bottom: 1px solid #f2f4f7;
+            background: #fafafa;
+        }
+        .ai-gen-progress-title {
+            font-size: 0.88rem;
+            color: #1d1d1f;
+        }
+        .ai-gen-progress-btn {
+            border: 1px solid #d0d5dd;
+            background: #fff;
+            color: #344054;
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .ai-gen-progress-btn:hover {
+            background: #f9fafb;
+        }
+        .ai-gen-progress-body {
+            padding: 12px 14px 14px;
+        }
+        .ai-gen-progress-panel.is-collapsed .ai-gen-progress-body {
+            display: none;
+        }
+        .ai-gen-progress-line {
+            font-size: 0.84rem;
+            color: #344054;
+            line-height: 1.45;
+            font-weight: 600;
+        }
+        .ai-gen-progress-sub {
+            margin-top: 6px;
+            font-size: 0.78rem;
+            color: #667085;
+            font-weight: 500;
+        }
+        .ai-gen-progress-bar {
+            margin-top: 10px;
+            height: 6px;
+            border-radius: 999px;
+            background: #eef2f6;
+            overflow: hidden;
+        }
+        .ai-gen-progress-bar-fill {
+            height: 100%;
+            width: 0;
+            background: linear-gradient(90deg, #0071e3, #34c759);
+            border-radius: 999px;
+            transition: width 0.35s ease;
+        }
+        .ai-gen-progress-panel.is-finished .ai-gen-progress-title {
+            color: #027a48;
+        }
+
+        /* 响应式 */
+        @media (max-width: 640px) {
+            .apple-card {
+                padding: 24px 20px;
+                border-radius: 18px;
+            }
+            .card-title {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body data-user-id="{% if user.is_authenticated %}{{ user.id }}{% else %}0{% endif %}">
+    <!-- 导航栏 -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo" style="margin-left: -650px">
+                <a href="/ai_listing/original_text" style="font-size: 25px">📊 AI Listing</a>
+            </div>
+            <div class="nav-links" style="margin-right: -590px">
+                {% if request.user.is_authenticated %}
+                    <a href="/ai_listing/original_text" class="{% if request.resolver_match.url_name == 'original_text_list' %}nav-active{% endif %}">原文本</a>
+                    <a href="/ai_listing/gpt_analysis" class="{% if request.resolver_match.url_name == 'gpt_analysis' %}nav-active{% endif %}">AI 差异化分析</a>
+                    <a href="/ai_listing/analysis_list" class="{% if request.resolver_match.url_name == 'analysis_list' %}nav-active{% endif %}">差异化分析概览</a>
+                    <a href="/ai_listing/listing_panel" class="{% if request.resolver_match.url_name == 'listing_panel' %}nav-active{% endif %}">Listing 面板</a>
+                    <a href="/ai_listing/ai_listing" class="{% if request.resolver_match.url_name == 'ai_listing' %}nav-active{% endif %}">AI-Listing</a>
+                    <a href="/ai_listing/ai_image_gen" class="{% if request.resolver_match.url_name == 'ai_image_gen' %}nav-active{% endif %}">AI 生图</a>
+                    <a href="/ai_listing/data_fetch" class="{% if request.resolver_match.url_name == 'data_fetch' %}nav-active{% endif %}">数据获取</a>
+
+                    {% if request.user.is_staff %}
+                        <a href="/ai_listing/users" class="{% if request.resolver_match.url_name == 'user_manage' %}nav-active{% endif %}">用户管理</a>
+                    {% endif %}
+                    {% if request.user.is_superuser %}
+                        <a href="/ai_listing/approvals" class="nav-link-with-badge {% if request.resolver_match.url_name == 'approval_list' %}nav-active{% endif %}">
+                            审批页面
+                            {% if pending_approval_count %}
+                                <span class="nav-badge" title="待审批注册">{{ pending_approval_badge_display }}</span>
+                            {% endif %}
+                        </a>
+                    {% endif %}
+                    <div class="nav-user-wrap">
+                        <button type="button" class="nav-user-trigger" id="nav-user-trigger" aria-haspopup="true" aria-expanded="false" aria-label="打开用户菜单">
+                            <span class="nav-avatar">{{ request.user.username|slice:":1" }}</span>
+                            <span>{{ request.user.username }}</span>
+                            <span class="nav-user-role">
+                                {% if request.user.is_superuser %}超级管理员{% elif request.user.is_staff %}管理员{% else %}普通用户{% endif %}
+                            </span>
+                        </button>
+                        <div class="nav-user-dropdown" id="nav-user-dropdown" role="menu">
+                            <a href="{% url 'account_settings' %}" role="menuitem">设置</a>
+                        </div>
+                    </div>
+                    <a href="/ai_listing/logout" onclick="if(window.AiGenProgressClear){AiGenProgressClear();}">退出</a>
+                {% else %}
+                    <a href="/ai_listing/login" class="{% if request.resolver_match.url_name == 'login' %}nav-active{% endif %}">登录</a>
+                    <a href="/ai_listing/register" class="{% if request.resolver_match.url_name == 'register' %}nav-active{% endif %}">注册</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- 内容占位 -->
+    <div class="main-content">
+        {% block content %}
+        <!-- 子模板内容填充到这里 -->
+        {% endblock %}
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <p>© 2026 ASIN Listing · 让每一条客户声音都有回应</p>
+    </footer>
+ {% block extra_scripts %}{% endblock %}
+    <script src="{% static 'js/ai_gen_progress.js' %}"></script>
+    <script src="{% static 'js/pagination.js' %}"></script>
+    <script>
+      (function () {
+        var trigger = document.getElementById('nav-user-trigger');
+        var menu = document.getElementById('nav-user-dropdown');
+        if (!trigger || !menu) return;
+        trigger.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var open = !menu.classList.contains('open');
+          menu.classList.toggle('open', open);
+          trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        document.addEventListener('click', function () {
+          menu.classList.remove('open');
+          trigger.setAttribute('aria-expanded', 'false');
+        });
+        menu.addEventListener('click', function (e) {
+          e.stopPropagation();
+        });
+      })();
+    </script>
+</body>
+</html>

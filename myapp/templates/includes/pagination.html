@@ -1,0 +1,33 @@
+{# 列表分页：page_obj、pagination_qs；align=center|end；仅多页时显示（show_always 可强制显示） #}
+{% if show_always or page_obj.paginator.num_pages > 1 %}
+{% with align=align|default:"center" p=page_param|default:"page" %}
+<nav class="app-pagination app-pagination--{{ align }}" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0 8px;font-size:0.86rem;justify-content:{% if align == "end" %}flex-end{% else %}center{% endif %};" aria-label="分页">
+  {% if page_obj.has_previous %}
+    <a href="?{% if pagination_qs %}{{ pagination_qs }}&{% endif %}{{ p }}={{ page_obj.previous_page_number }}" style="color:#0071e3;font-weight:600;text-decoration:none;padding:6px 12px;border-radius:999px;border:1px solid #d0d5dd;background:#fff;">上一页</a>
+  {% else %}
+    <span style="color:#98a2b3;padding:6px 12px;">上一页</span>
+  {% endif %}
+  <span class="app-pagination__info" style="color:#667085;font-weight:600;display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;">
+    第
+    <input
+      type="number"
+      class="app-pagination__page-input"
+      min="1"
+      max="{{ page_obj.paginator.num_pages }}"
+      value="{{ page_obj.number }}"
+      data-current-page="{{ page_obj.number }}"
+      data-page-param="{{ p }}"
+      data-pagination-qs="{{ pagination_qs|default:'' }}"
+      aria-label="跳转到页码"
+      style="width:3.2em;padding:4px 6px;border:1px solid #d0d5dd;border-radius:8px;font:inherit;font-weight:600;text-align:center;color:#344054;background:#fff;"
+    />
+    / {{ page_obj.paginator.num_pages }} 页（共 {{ page_obj.paginator.count }} 条）
+  </span>
+  {% if page_obj.has_next %}
+    <a href="?{% if pagination_qs %}{{ pagination_qs }}&{% endif %}{{ p }}={{ page_obj.next_page_number }}" style="color:#0071e3;font-weight:600;text-decoration:none;padding:6px 12px;border-radius:999px;border:1px solid #d0d5dd;background:#fff;">下一页</a>
+  {% else %}
+    <span style="color:#98a2b3;padding:6px 12px;">下一页</span>
+  {% endif %}
+</nav>
+{% endwith %}
+{% endif %}

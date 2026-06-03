@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}用户管理 - ASIN Lens{% endblock %}
+
+{% block content %}
+  <div class="apple-card" style="padding: 28px 32px;">
+    <h2 class="card-title" style="margin-bottom: 16px;">用户管理</h2>
+    <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+      <span style="padding:6px 12px;border-radius:999px;background:#ecfdf3;color:#027a48;border:1px solid #d1fadf;font-size:0.84rem;">
+        已启用 {{ active_count }} 个账号
+      </span>
+      <span style="padding:6px 12px;border-radius:999px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;font-size:0.84rem;">
+        已禁用 {{ inactive_count }} 个账号
+      </span>
+    </div>
+
+    {% if messages %}
+      <div style="margin: 8px 0 14px;">
+        {% for message in messages %}
+          <div style="padding:10px 12px;border-radius:12px;margin-bottom:8px;background:#f2f4f7;border:1px solid #e4e7ec;color:#344054;">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div style="overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;min-width:1120px;font-size:0.9rem;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">用户名</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">邮箱</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">加入时间</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">角色</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">审批状态</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">启用状态</th>
+            <th style="text-align:left;padding:12px;border-bottom:2px solid #e8e8ed;color:#667085;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u, p in rows %}
+          <tr>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="width:30px;height:30px;border-radius:50%;background:#dce9ff;color:#004eeB;font-weight:700;display:inline-flex;align-items:center;justify-content:center;text-transform:uppercase;">{{ u.username|slice:":1" }}</span>
+                <span>{{ u.username }}</span>
+              </div>
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;color:#344054;">
+              {{ u.email|default:"-" }}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;color:#667085;">
+              {{ u.date_joined|date:"Y-m-d H:i" }}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              {% if u.is_superuser %}超级管理员{% elif u.is_staff %}管理员{% else %}普通用户{% endif %}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              {% if p.approval_status == 'approved' %}
+                <span style="padding:4px 10px;border-radius:999px;background:#ecfdf3;color:#027a48;border:1px solid #d1fadf;">已审批</span>
+              {% elif p.approval_status == 'rejected' %}
+                <span style="padding:4px 10px;border-radius:999px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;">已拒绝</span>
+              {% else %}
+                <span style="padding:4px 10px;border-radius:999px;background:#fffaeb;color:#b54708;border:1px solid #fedf89;">待审批</span>
+              {% endif %}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              {% if u.is_active %}
+                <span style="padding:4px 10px;border-radius:999px;background:#ecfdf3;color:#027a48;border:1px solid #d1fadf;">启用</span>
+              {% else %}
+                <span style="padding:4px 10px;border-radius:999px;background:#fef3f2;color:#b42318;border:1px solid #fecdca;">禁用</span>
+              {% endif %}
+            </td>
+            <td style="padding:12px;border-bottom:1px solid #f2f4f7;">
+              {% if request.user.id != u.id %}
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <form method="post" action="{% url 'toggle_user_active' u.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit"
+                          style="background:{% if u.is_active %}#fef3f2{% else %}#ecfdf3{% endif %};border:1px solid #eaecf0;border-radius:12px;padding:6px 12px;cursor:pointer;">
+                    {% if u.is_active %}禁用{% else %}启用{% endif %}
+                  </button>
+                </form>
+                <form method="post" action="{% url 'delete_user' u.id %}" style="display:inline;"
+                      onsubmit="return confirm('确定删除该用户？此操作不可恢复。');">
+                  {% csrf_token %}
+                  {% include "includes/preserve_get.html" %}
+                  <button type="submit"
+                          style="background:#fff;border:1px solid #fecdca;color:#b42318;border-radius:12px;padding:6px 12px;cursor:pointer;">
+                    删除用户
+                  </button>
+                </form>
+                </div>
+              {% else %}
+                <span style="color:#98a2b3;">当前账号</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs %}
+  </div>
+{% endblock %}
+

@@ -1,0 +1,330 @@
+{% extends 'base.html' %}
+{% block title %}账户设置 - ASIN Lens{% endblock %}
+
+{% block extra_head %}
+<style>
+  .settings-wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 48px 24px 72px;
+  }
+  .settings-hero {
+    margin-bottom: 40px;
+  }
+  .settings-kicker {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #86868b;
+    margin-bottom: 10px;
+  }
+  .settings-title {
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: #1d1d1f;
+    line-height: 1.15;
+    margin: 0 0 10px;
+  }
+  .settings-lead {
+    font-size: 1rem;
+    color: #667085;
+    max-width: 520px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  .settings-alert {
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    border-radius: 14px;
+    font-size: 0.92rem;
+    border: 1px solid #e8e8ed;
+  }
+  .settings-alert.success { background: #ecfdf3; color: #027a48; border-color: #abefc6; }
+  .settings-alert.info { background: #f9fafb; color: #344054; }
+  .settings-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    align-items: start;
+  }
+  .settings-grid-full {
+    margin-top: 22px;
+  }
+  .settings-panel.admin-only {
+    border-color: rgba(0, 113, 227, 0.18);
+    box-shadow: 0 4px 24px rgba(0, 113, 227, 0.06);
+  }
+  .panel-icon.h10 {
+    background: linear-gradient(145deg, #fff7ed 0%, #ffedd5 100%);
+    color: #c2410c;
+  }
+  .h10-status {
+    margin: 0 0 18px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    border: 1px solid #e8e8ed;
+    background: #f9fafb;
+    color: #344054;
+  }
+  .h10-status.ok { background: #ecfdf3; border-color: #abefc6; color: #027a48; }
+  .h10-status.warn { background: #fffaeb; border-color: #fedf89; color: #93370d; }
+  .field-hint {
+    margin: 6px 0 0;
+    font-size: 0.8rem;
+    color: #667085;
+    line-height: 1.45;
+  }
+  @media (max-width: 820px) {
+    .settings-grid { grid-template-columns: 1fr; }
+    .settings-wrap { padding-top: 28px; }
+    .settings-title { font-size: 1.65rem; }
+  }
+  .settings-panel {
+    background: #fff;
+    border-radius: 22px;
+    padding: 28px 30px 30px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  }
+  .panel-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 22px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid #f0f0f5;
+  }
+  .panel-icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(145deg, #f0f5ff 0%, #e8efff 100%);
+    color: #004eeb;
+    font-weight: 700;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .panel-icon.sec {
+    background: linear-gradient(145deg, #f6f6f7 0%, #ececee 100%);
+    color: #1d1d1f;
+  }
+  .panel-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #1d1d1f;
+    margin: 0 0 4px;
+    letter-spacing: -0.02em;
+  }
+  .panel-meta {
+    font-size: 0.82rem;
+    color: #667085;
+    margin: 0;
+    line-height: 1.45;
+    word-break: break-all;
+  }
+  .panel-meta strong {
+    color: #344054;
+    font-weight: 600;
+  }
+  .settings-field {
+    margin-bottom: 18px;
+  }
+  .settings-field label,
+  .settings-field .field-label-hint {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #667085;
+    margin-bottom: 8px;
+  }
+  .form-errors {
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #fef3f2;
+    border: 1px solid #ffd5d2;
+    color: #912018;
+    font-size: 0.88rem;
+  }
+  .panel-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .btn-settings-primary {
+    border: none;
+    padding: 10px 22px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    background: #0071e3;
+    color: #fff;
+    transition: background 0.2s, transform 0.15s;
+  }
+  .btn-settings-primary:hover {
+    background: #0077ed;
+  }
+  .btn-settings-primary:active {
+    transform: scale(0.98);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-wrap">
+  <header class="settings-hero">
+{#    <p class="settings-kicker">账户中心</p>#}
+    <h1 class="settings-title">个人设置</h1>
+  </header>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="settings-alert {% if message.tags == 'success' %}success{% else %}info{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="settings-grid">
+    <section class="settings-panel" aria-labelledby="panel-email-title">
+      <div class="panel-top">
+        <div class="panel-icon" aria-hidden="true">@</div>
+        <div>
+          <h2 class="panel-title" id="panel-email-title">邮箱</h2>
+          <p class="panel-meta">当前邮箱：<strong>{{ request.user.email|default:"未绑定" }}</strong></p>
+        </div>
+      </div>
+
+      <form method="post" action="{% url 'account_settings' %}">
+        {% csrf_token %}
+        <input type="hidden" name="form_action" value="email">
+
+        {% if email_form.non_field_errors %}
+          <div class="form-errors">{{ email_form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="settings-field">
+          <label for="id_new_email">新邮箱地址</label>
+          {{ email_form.new_email }}
+          {% if email_form.new_email.errors %}<div class="form-errors" style="margin-top:8px;">{{ email_form.new_email.errors }}</div>{% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="id_email_current_password">当前密码（验证身份）</label>
+          {{ email_form.current_password }}
+          {% if email_form.current_password.errors %}<div class="form-errors" style="margin-top:8px;">{{ email_form.current_password.errors }}</div>{% endif %}
+        </div>
+
+        <div class="panel-actions">
+          <button type="submit" class="btn-settings-primary">保存邮箱</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="settings-panel" aria-labelledby="panel-pass-title">
+      <div class="panel-top">
+        <div class="panel-icon sec" aria-hidden="true">◇</div>
+        <div>
+          <h2 class="panel-title" id="panel-pass-title">登录密码</h2>
+          <p class="panel-meta">定期更换密码有助于保护账号安全。</p>
+        </div>
+      </div>
+
+      <form method="post" action="{% url 'account_settings' %}">
+        {% csrf_token %}
+        <input type="hidden" name="form_action" value="password">
+
+        {% if password_form.non_field_errors %}
+          <div class="form-errors">{{ password_form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="settings-field">
+          <label for="id_old_password">当前密码</label>
+          {{ password_form.old_password }}
+          {% if password_form.old_password.errors %}<div class="form-errors" style="margin-top:8px;">{{ password_form.old_password.errors }}</div>{% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="id_new_password1">新密码</label>
+          {{ password_form.new_password1 }}
+          {% if password_form.new_password1.errors %}<div class="form-errors" style="margin-top:8px;">{{ password_form.new_password1.errors }}</div>{% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="id_new_password2">确认新密码</label>
+          {{ password_form.new_password2 }}
+          {% if password_form.new_password2.errors %}<div class="form-errors" style="margin-top:8px;">{{ password_form.new_password2.errors }}</div>{% endif %}
+        </div>
+
+        <div class="panel-actions">
+          <button type="submit" class="btn-settings-primary">更新密码</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  {% if request.user.is_superuser %}
+  <div class="settings-grid-full">
+    <section class="settings-panel admin-only" aria-labelledby="panel-h10-title">
+      <div class="panel-top">
+        <div class="panel-icon h10" aria-hidden="true">H10</div>
+        <div>
+          <h2 class="panel-title" id="panel-h10-title">Helium10 凭证</h2>
+          <p class="panel-meta">用于「数据获取 / 刷新关键词」调用 Helium10 Cerebro API。仅超级管理员可见。</p>
+        </div>
+      </div>
+
+      {% if h10_status.configured %}
+        <div class="h10-status ok">
+          已配置凭证。
+          {% if h10_status.auth_masked %}Authorization：{{ h10_status.auth_masked }}{% endif %}
+          {% if h10_status.x_token_masked %} · x-pacvue-token：{{ h10_status.x_token_masked }}{% endif %}
+          {% if h10_status.updated_at %}
+            <br>最后更新：{{ h10_status.updated_at|date:"Y-m-d H:i" }}
+            {% if h10_status.updated_by %}（{{ h10_status.updated_by.username }}）{% endif %}
+          {% endif %}
+          {% if h10_status.from_env_only %}
+            <br><span style="color:#93370d;">当前值来自环境变量，保存后将写入数据库。</span>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="h10-status warn">尚未配置 Helium10 凭证，关键词获取将失败。请填写下方两项并保存。</div>
+      {% endif %}
+
+      <form method="post" action="{% url 'account_settings' %}">
+        {% csrf_token %}
+        <input type="hidden" name="form_action" value="h10">
+
+        {% if h10_form.non_field_errors %}
+          <div class="form-errors">{{ h10_form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="settings-field">
+          <label for="id_h10_auth_token">{{ h10_form.h10_auth_token.label }}</label>
+          {{ h10_form.h10_auth_token }}
+          <p class="field-hint">对应请求头 <code>Authorization: Bearer …</code> 中的令牌（非 JWT 部分）。</p>
+          {% if h10_form.h10_auth_token.errors %}<div class="form-errors" style="margin-top:8px;">{{ h10_form.h10_auth_token.errors }}</div>{% endif %}
+        </div>
+        <div class="settings-field">
+          <label for="id_h10_x_token">{{ h10_form.h10_x_token.label }}</label>
+          {{ h10_form.h10_x_token }}
+          <p class="field-hint">对应请求头 <code>x-pacvue-token: Bearer …</code> 中的 JWT，过期后需重新从浏览器复制。</p>
+          {% if h10_form.h10_x_token.errors %}<div class="form-errors" style="margin-top:8px;">{{ h10_form.h10_x_token.errors }}</div>{% endif %}
+        </div>
+
+        <div class="panel-actions">
+          <button type="submit" class="btn-settings-primary">保存 Helium10 凭证</button>
+        </div>
+      </form>
+    </section>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

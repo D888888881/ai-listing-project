@@ -1,0 +1,1350 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}ASIN 分析列表 - ASIN Listing{% endblock %}
+
+{% block content %}
+    {{ compare_payload|json_script:"compare-payload" }}
+    <div class="apple-card" style="padding: 28px 32px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px;">
+            <h2 class="card-title" style="margin-bottom:0; border-bottom:0; padding-bottom:0;">
+                📋 分析结果概览
+            </h2>
+            <span style="color:#86868b; font-size:0.9rem;">
+            共 {{ page_obj.paginator.count }} 条记录
+        </span>
+        </div>
+
+        {% if messages %}
+          <div style="margin: 0 0 18px;">
+            {% for message in messages %}
+              <div style="padding:10px 14px;border-radius:14px;margin-bottom:10px;background:#f2f4f7;border:1px solid #e8e8ed;color:#1d1d1f;">
+                {{ message }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 8px;">
+          <form method="get" action="{% url 'analysis_list' %}" style="display:flex; flex-direction:column; gap:6px;">
+            <div style="font-size:0.8rem;font-weight:600;color:#86868b;text-transform:uppercase;letter-spacing:0.3px;">ASIN 搜索</div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <input type="text" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字"
+                     style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;"/>
+              <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
+              {% if search_q %}
+                <a href="{% url 'analysis_list' %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
+              {% endif %}
+            </div>
+          </form>
+          <form method="post" action="{% url 'batch_delete_analysis' %}" id="form-batch-analysis" style="display:flex; align-items:flex-end;">
+            {% csrf_token %}
+            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+            {% include "includes/preserve_get.html" %}
+            <button type="submit" class="del-btn" style="padding:10px 18px; white-space:nowrap;"
+                    onclick="return confirm('确定批量删除选中的分析记录？');">批量删除</button>
+          </form>
+        </div>
+
+        <style>
+            /* 表格基本样式 */
+            .analysis-table {
+                width: 100%;
+                border-collapse: collapse;
+                min-width: 900px;
+                font-size: 0.88rem;
+            }
+
+            .analysis-table th {
+                padding: 14px 12px;
+                font-weight: 600;
+                color: #86868b;
+                text-align: left;
+                border-bottom: 2px solid #e8e8ed;
+                background: transparent;
+                white-space: nowrap;
+            }
+
+            /* 主行 */
+            .main-row td {
+                padding: 12px 12px;
+                border-bottom: 1px solid #f0f0f5;
+                transition: background 0.15s;
+                vertical-align: middle;
+            }
+
+            .main-row:hover td {
+                background: #fafafa;
+            }
+
+            /* 详情行 */
+            .detail-row td {
+                padding: 10px 12px;
+                border-bottom: 1px solid #f0f0f5;
+                background: #fff;
+                color: #1d1d1f;
+                font-size: 0.85rem;
+                vertical-align: top;
+            }
+
+            /* 隐藏详情行时的样式（由JS控制） */
+            .detail-row.hidden {
+                display: none;
+            }
+
+            /* 让ASIN和Listing列在详情行中“消失”，融合进主行的视觉 */
+            .detail-row .asin-cell,
+            .detail-row .listing-cell {
+                background: #fff; /* 与主行一致 */
+                border-bottom: none; /* 去掉自己的底部边框 */
+                color: transparent; /* 隐藏文字 */
+                user-select: none;
+                vertical-align: middle;
+            }
+
+            /* 第一个详情行需要承接主行的下边框，制造无缝感 */
+            .detail-row:not(.hidden) + .detail-row .asin-cell,
+            .detail-row:not(.hidden) + .detail-row .listing-cell {
+                border-top: none;
+            }
+
+            /* 主行ASIN列加粗蓝色 */
+            .main-row .asin-cell {
+                font-weight: 600;
+                color: #0071e3;
+            }
+
+            .main-row .listing-cell {
+                max-width: 260px;
+                white-space: nowrap;
+            }
+            .main-row .listing-cell .listing-preview {
+                display: inline-block;
+                max-width: 180px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                vertical-align: middle;
+            }
+
+            /* 占位文字 */
+            .placeholder-text {
+                color: #86868b;
+                font-size: 0.8rem;
+                font-style: italic;
+            }
+
+            /* 操作按钮 */
+            .toggle-btn {
+                background: #f0f5ff;
+                border: none;
+                padding: 6px 16px;
+                border-radius: 14px;
+                font-weight: 500;
+                color: #0071e3;
+                cursor: pointer;
+                transition: background 0.2s;
+                font-size: 0.8rem;
+            }
+
+            .toggle-btn:hover {
+                background: #dce9ff;
+            }
+
+            .toggle-btn.show {
+                background: #e8e8ed;
+                color: #1d1d1f;
+            }
+
+            .del-btn {
+                background: #fef3f2;
+                color: #b42318;
+                border: 1px solid #fecdca;
+                padding: 6px 14px;
+                border-radius: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                font-size: 0.8rem;
+            }
+            .del-btn:hover {
+                background: #fee4e2;
+            }
+
+            /* 展开按钮 */
+            .listing-expand-btn {
+                background: none;
+                border: none;
+                color: #0071e3;
+                font-size: 0.8rem;
+                font-weight: 500;
+                cursor: pointer;
+                padding: 2px 6px;
+                margin-left: 6px;
+                border-radius: 6px;
+                transition: background 0.2s;
+            }
+
+            .listing-expand-btn:hover {
+                background: #f0f5ff;
+            }
+
+            /* 模态遮罩 */
+            .modal-overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 1000;
+                background: rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(8px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                animation: fadeIn 0.2s ease;
+            }
+
+            @keyframes fadeIn {
+                from {
+                    opacity: 0;
+                }
+                to {
+                    opacity: 1;
+                }
+            }
+
+            /* 模态卡片 */
+            .modal-card {
+                background: #ffffff;
+                border-radius: 22px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+                width: 90%;
+                max-width: 1080px;
+                max-height: 80vh;
+                display: flex;
+                flex-direction: column;
+                animation: slideUp 0.25s ease;
+            }
+
+            @keyframes slideUp {
+                from {
+                    transform: translateY(20px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
+
+            .modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 24px 28px 16px;
+                border-bottom: 1px solid #e8e8ed;
+            }
+
+            .modal-title {
+                font-size: 1.3rem;
+                font-weight: 600;
+                color: #1d1d1f;
+                letter-spacing: -0.3px;
+            }
+
+            .modal-close-btn {
+                background: none;
+                border: none;
+                font-size: 1.6rem;
+                color: #86868b;
+                cursor: pointer;
+                padding: 0 4px;
+                line-height: 1;
+                transition: color 0.2s;
+            }
+
+            .modal-close-btn:hover {
+                color: #1d1d1f;
+            }
+
+            .modal-body {
+                padding: 24px 28px 32px;
+                overflow-y: auto;
+                font-size: 0.95rem;
+                line-height: 1.7;
+                color: #1d1d1f;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            /* GPT 总结展开按钮 */
+            .gpt-expand-btn {
+                background: none;
+                border: none;
+                color: #0071e3;
+                font-size: 0.8rem;
+                font-weight: 500;
+                cursor: pointer;
+                padding: 2px 6px;
+                margin-left: 4px;
+                border-radius: 6px;
+                transition: background 0.2s;
+            }
+
+            .gpt-expand-btn:hover {
+                background: #f0f5ff;
+            }
+
+            .gpt-preview {
+                vertical-align: middle;
+            }
+
+            /* ---------- Listing 对照模态（左 Listing / 右原文本+分析）---------- */
+            .compare-modal-card {
+                width: 95%;
+                max-width: 1320px;
+                height: min(88vh, 920px);
+                max-height: 92vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .compare-modal-body {
+                display: flex;
+                flex: 1;
+                min-height: 0;
+                overflow: hidden;
+            }
+
+            .compare-col-left {
+                flex: 0 0 40%;
+                min-width: 0;
+                border-right: 1px solid #e8e8ed;
+                padding: 20px 24px;
+                overflow-y: auto;
+                background: #fafafa;
+            }
+
+            .compare-col-right {
+                flex: 1;
+                min-width: 0;
+                padding: 20px 24px;
+                overflow-y: auto;
+            }
+
+            @media (max-width: 1024px) {
+                .compare-modal-body {
+                    flex-direction: column;
+                }
+                .compare-col-left {
+                    flex: 0 0 auto;
+                    max-height: 42vh;
+                    border-right: none;
+                    border-bottom: 1px solid #e8e8ed;
+                }
+            }
+
+            .compare-col-left .compare-md {
+                font-size: 0.92rem;
+                line-height: 1.65;
+                color: #1d1d1f;
+                white-space: normal;
+                word-break: break-word;
+            }
+
+            .compare-col-left .compare-md pre {
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            .compare-section {
+                margin-bottom: 22px;
+            }
+
+            .compare-section-title {
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
+                color: #86868b;
+                margin: 0 0 10px;
+            }
+
+            .compare-block-title {
+                font-size: 0.88rem;
+                font-weight: 600;
+                color: #1d1d1f;
+                margin: 0 0 8px;
+            }
+
+            .compare-muted {
+                color: #86868b;
+                font-size: 0.85rem;
+                font-style: italic;
+            }
+
+            .compare-gpt-label {
+                font-size: 0.82rem;
+                font-weight: 600;
+                color: #0071e3;
+                margin-bottom: 6px;
+            }
+
+            .compare-gpt-md {
+                font-size: 0.88rem;
+                line-height: 1.6;
+                color: #1d1d1f;
+            }
+
+            .compare-gpt-md p {
+                margin: 0 0 0.5em;
+            }
+
+            .compare-satisfy {
+                margin-top: 8px;
+                padding: 10px 12px;
+                background: #f9fafb;
+                border: 1px solid #eaecf0;
+                border-radius: 12px;
+                font-size: 0.82rem;
+                line-height: 1.5;
+                color: #344054;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            .compare-satisfy-label {
+                font-size: 0.72rem;
+                font-weight: 600;
+                color: #667085;
+                margin-bottom: 4px;
+            }
+
+            /* ========== VOC 弹窗：与原文本页 original_text_list 完全一致 ========== */
+            .voc-modal-overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 1100;
+                background: rgba(0, 0, 0, 0.3);
+                backdrop-filter: blur(8px);
+                display: none;
+                align-items: center;
+                justify-content: center;
+            }
+            .voc-modal-card {
+                background: #fff;
+                border-radius: 22px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.04);
+                width: 92%;
+                max-width: 1180px;
+                max-height: 84vh;
+                display: flex;
+                flex-direction: column;
+            }
+            .voc-modal-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 18px 22px;
+                border-bottom: 1px solid #e8e8ed;
+            }
+            .voc-modal-title {
+                font-size: 1.1rem;
+                font-weight: 600;
+                color: #1d1d1f;
+            }
+            .voc-modal-close {
+                background: none;
+                border: none;
+                font-size: 1.6rem;
+                color: #86868b;
+                cursor: pointer;
+                line-height: 1;
+            }
+            .voc-modal-close:hover {
+                color: #1d1d1f;
+            }
+            .voc-modal-body {
+                padding: 18px 22px 22px;
+                overflow-y: auto;
+            }
+
+            .voc-md-root {
+                font-size: 12px;
+                line-height: 1.35;
+                color: #101828;
+            }
+            .voc-md-root .voc-md-h3 {
+                font-size: 13px;
+                font-weight: 700;
+                margin: 10px 0 6px;
+                color: #004eeb;
+                padding-bottom: 4px;
+                border-bottom: 1px solid #eaecf0;
+            }
+            .voc-md-root .voc-md-h4 {
+                font-size: 12px;
+                font-weight: 700;
+                margin: 8px 0 4px;
+                color: #344054;
+            }
+            .voc-md-root .voc-md-hr {
+                border: 0;
+                border-top: 1px dashed #d0d5dd;
+                margin: 12px 0;
+            }
+            .voc-md-root .voc-md-ul {
+                margin: 4px 0 8px 16px;
+                padding: 0;
+            }
+            .voc-md-root .voc-md-ul li {
+                margin: 2px 0;
+            }
+            .voc-md-root .voc-md-p {
+                margin: 4px 0;
+                color: #475467;
+            }
+            .voc-md-root .voc-md-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 4px 0 10px;
+                font-size: 11px;
+                table-layout: fixed;
+            }
+            .voc-md-root .voc-md-table col.voc-col-desc {
+                width: 30%;
+            }
+            .voc-md-root .voc-md-table col.voc-col-pct {
+                width: 10%;
+            }
+            .voc-md-root .voc-md-table col.voc-col-reason {
+                width: auto;
+            }
+            .voc-md-root .voc-md-table th,
+            .voc-md-root .voc-md-table td {
+                border: 1px solid #eaecf0;
+                padding: 3px 6px;
+                vertical-align: top;
+                word-break: break-word;
+            }
+            .voc-md-root .voc-md-table th {
+                background: #f9fafb;
+                color: #667085;
+                font-weight: 600;
+            }
+
+            .voc-bundle-wrap {
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+            }
+            .voc-bundle-panel {
+                border-radius: 14px;
+                border: 1px solid #e4e7ec;
+                overflow: hidden;
+                background: #fff;
+            }
+            .voc-bundle-panel--target {
+                border-color: #7cd4fd;
+                box-shadow: 0 2px 10px rgba(0, 113, 227, 0.09);
+            }
+            .voc-bundle-panel--cluster {
+                background: #f8fafc;
+                border-color: #d0d5dd;
+            }
+            .voc-bundle-panel-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 10px 14px;
+                min-height: 42px;
+            }
+            .voc-bundle-panel--target .voc-bundle-panel-head {
+                background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 50%, #fff 100%);
+                font-weight: 700;
+                font-size: 13px;
+                color: #075985;
+            }
+            .voc-bundle-panel--cluster .voc-bundle-panel-head {
+                background: #eef2ff;
+                font-weight: 700;
+                font-size: 12px;
+                color: #1d2939;
+            }
+            .voc-bundle-asin {
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+                letter-spacing: 0.02em;
+            }
+            .voc-bundle-badges {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .voc-bundle-badge {
+                font-size: 11px;
+                font-weight: 600;
+                padding: 2px 10px;
+                border-radius: 999px;
+                white-space: nowrap;
+            }
+            .voc-bundle-badge--cluster {
+                background: #dcfce7;
+                color: #166534;
+                border: 1px solid #86efac;
+            }
+            .voc-bundle-badge--row {
+                background: #e0e7ff;
+                color: #3730a3;
+                border: 1px solid #c7d2fe;
+            }
+            .voc-bundle-badge--empty {
+                background: #fee4e2;
+                color: #b42318;
+                border: 1px solid #fecdda;
+            }
+            .voc-bundle-panel-body {
+                padding: 12px 14px 14px;
+                background: #fff;
+            }
+            .voc-bundle-panel--cluster .voc-bundle-panel-body {
+                background: #fafbfc;
+            }
+            .voc-md-root--inner {
+                font-size: 12.5px;
+                line-height: 1.52;
+                color: #1d2939;
+            }
+            .voc-md-root--inner .voc-md-h3 {
+                font-size: 14px;
+                margin-top: 14px;
+                color: #026aa2;
+            }
+            .voc-md-root--inner .voc-md-h3:first-child {
+                margin-top: 0;
+            }
+            .voc-md-root--inner .voc-md-h4 {
+                font-size: 13px;
+                margin-top: 12px;
+                color: #344054;
+            }
+            .voc-md-root--inner .voc-md-table col.voc-col-desc {
+                width: 30%;
+            }
+            .voc-md-root--inner .voc-md-table col.voc-col-pct {
+                width: 10%;
+            }
+            .voc-md-root--inner .voc-md-table {
+                font-size: 12px;
+            }
+            .voc-md-root--inner .voc-md-table tbody tr:nth-child(even) td {
+                background: #f9fafb;
+            }
+            .voc-bundle-empty {
+                margin: 0;
+                padding: 14px;
+                text-align: center;
+                color: #667085;
+                font-size: 12px;
+                background: #fff;
+                border-radius: 10px;
+                border: 1px dashed #d0d5dd;
+            }
+
+            .voc-md-table--consumer-wide td,
+            .voc-md-table--consumer-wide th {
+                word-break: break-word;
+                white-space: normal;
+                vertical-align: top;
+            }
+
+            /* VOC（shulex）：与原文本页同一段 CSS */
+            .shulexVocSSBodyCardList {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 16px;
+                align-items: start;
+            }
+            .shulexVocSSBodyCard--consumer-span {
+                grid-column: 1 / -1;
+            }
+            @media (max-width: 980px) {
+                .shulexVocSSBodyCardList {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .shulexVocSSBodyCard {
+                background: #ffffff;
+                border-radius: 16px;
+                border: 1px solid #eaecf0;
+                overflow: hidden;
+                box-shadow: 0 1px 8px rgba(16, 24, 40, 0.04);
+            }
+            .shulexVocSSBodyCardHead {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 16px;
+                border-bottom: 1px solid #f2f4f7;
+            }
+            .shulexVocSSBodyCardHead svg {
+                width: 20px;
+                height: 20px;
+                flex: 0 0 20px;
+            }
+            .shulexVocSSBodyCardHead span {
+                font-size: 14px;
+                font-weight: 600;
+                color: #101828;
+            }
+            .shulexVocSSCardBodyNer {
+                padding: 14px 16px 16px;
+            }
+            .shulexVocSSNerSexPercent {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 12px;
+                padding: 6px 0 12px;
+            }
+            .shulexVocSSNerSexNum {
+                font-weight: 700;
+                color: #101828;
+                min-width: 42px;
+                text-align: center;
+            }
+            .shulexVocSSNerSexItem {
+                position: relative;
+                width: 26px;
+                height: 26px;
+                border-radius: 8px;
+                overflow: hidden;
+                background: #f2f4f7;
+                display: grid;
+                place-items: center;
+            }
+            .shulexVocSSNerSexItem svg {
+                width: 18px;
+                height: 18px;
+            }
+            .shulexVocSSNerSexItemMask {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(16, 24, 40, 0.12);
+            }
+            .shulexVocSSNerLine {
+                width: 100%;
+                height: 14px;
+                margin: 2px 0 10px;
+            }
+            .shulexVocSSNerBox {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                align-items: stretch;
+                gap: 12px;
+                overflow-x: auto;
+                padding-bottom: 4px;
+            }
+            .shulexVocSSNerItem {
+                flex: 1 1 0;
+                min-width: 120px;
+                border: 1px solid #f2f4f7;
+                border-radius: 12px;
+                padding: 8px 10px 10px;
+                background: #fafbfc;
+            }
+            .shulexVocSSNerName {
+                font-size: 12px;
+                font-weight: 600;
+                color: #667085;
+                margin-bottom: 8px;
+            }
+            .shulexVocSSAspect {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 10px;
+                font-size: 12px;
+                color: #101828;
+                padding: 3px 0;
+            }
+            .shulexVocSSAspectText {
+                max-width: none;
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .shulexVocSSTable {
+                padding: 12px 16px 16px;
+            }
+            .shulexVocSSTableHead {
+                margin-bottom: 8px;
+            }
+            .shulexVocSSTableRow {
+                display: grid;
+                grid-template-columns: minmax(0, 30%) minmax(0, 10%) 1fr 34px;
+                gap: 10px;
+                align-items: center;
+                padding: 8px 0;
+                border-bottom: 1px solid #f2f4f7;
+            }
+            .shulexVocSSTableRow:last-child {
+                border-bottom: 0;
+            }
+            .shulexVocSSTableCell {
+                font-size: 12px;
+                color: #101828;
+                min-width: 0;
+            }
+            .shulexVocSSTableHead .shulexVocSSTableCell {
+                font-weight: 600;
+                color: #667085;
+            }
+            .shulexVocSSTableLastCell {
+                color: #344054;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .shulexVocSSTablePercent {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .shulexVocSSTablePercentNum {
+                font-weight: 700;
+                color: #101828;
+                min-width: 38px;
+            }
+            .shulexVocSSTablePercentBar {
+                flex: 1;
+                height: 6px;
+                border-radius: 999px;
+                background: #eaecf0;
+                overflow: hidden;
+            }
+            .shulexVocSSTablePercentLine {
+                height: 100%;
+                border-radius: 999px;
+                background: #12b76a;
+                width: 0%;
+            }
+            .slxBarBlue .shulexVocSSTablePercentLine {
+                background: #1570ef;
+            }
+            .slxBarOrange .shulexVocSSTablePercentLine {
+                background: #f79009;
+            }
+            .slxBarGreen .shulexVocSSTablePercentLine {
+                background: #12b76a;
+            }
+            .slxBarRed .shulexVocSSTablePercentLine {
+                background: #f04438;
+            }
+            .slxBarYellow .shulexVocSSTablePercentLine {
+                background: #dc6803;
+            }
+            .slx_table_expand_btn {
+                margin-left: auto;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 28px;
+                height: 28px;
+                border-radius: 10px;
+                border: 1px solid transparent;
+                background: transparent;
+                cursor: pointer;
+                transition: background 0.15s ease, border-color 0.15s ease;
+            }
+            .slx_table_expand_btn:hover {
+                background: #f2f4f7;
+                border-color: #eaecf0;
+            }
+            .slx_table_expand {
+                width: 14px;
+                height: 14px;
+            }
+            .voc-embed-full .shulexVocSSTableRow {
+                grid-template-columns: minmax(0, 30%) minmax(0, 10%) 1fr;
+            }
+            .slxModalReasonWrap {
+                white-space: normal !important;
+                overflow: visible !important;
+                text-overflow: clip !important;
+                line-height: 1.55;
+            }
+
+            /* 原文本：关键词 / Rufus（与 original_text_list 一致） */
+            .chip {
+                display: inline-flex;
+                align-items: center;
+                padding: 4px 10px;
+                border-radius: 999px;
+                background: #f2f4f7;
+                color: #344054;
+                font-size: 12px;
+                line-height: 1.2;
+                border: 1px solid #eaecf0;
+                max-width: 260px;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                margin-right: 6px;
+                margin-bottom: 6px;
+            }
+
+            .chip.blue {
+                background: #f0f5ff;
+                border-color: #dce9ff;
+                color: #004eeb;
+            }
+
+            .chip.gray {
+                background: #f2f4f7;
+                border-color: #eaecf0;
+                color: #344054;
+            }
+
+            .rufus-list {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .rufus-item {
+                padding: 12px 14px;
+                border: 1px solid #eaecf0;
+                border-radius: 14px;
+                background: #ffffff;
+            }
+
+            .rufus-item-title {
+                font-size: 12px;
+                font-weight: 700;
+                color: #667085;
+                margin-bottom: 6px;
+                text-transform: uppercase;
+                letter-spacing: 0.3px;
+            }
+
+            .rufus-item-body {
+                font-size: 14px;
+                color: #101828;
+                line-height: 1.55;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            .rufus-item-question {
+                font-size: 13px;
+                font-weight: 600;
+                color: #101828;
+                line-height: 1.45;
+                margin-bottom: 6px;
+            }
+
+            .rufus-item-answer {
+                font-size: 13px;
+                color: #475467;
+                line-height: 1.55;
+                white-space: pre-wrap;
+                word-break: break-word;
+            }
+
+            .voc-pre {
+                white-space: pre-wrap;
+                word-break: break-word;
+                background: #f9fafb;
+                border: 1px solid #eaecf0;
+                border-radius: 14px;
+                padding: 14px 16px;
+                color: #101828;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+                font-size: 0.85rem;
+            }
+        </style>
+
+        <table class="analysis-table">
+            <thead>
+            <tr>
+                <th style="width: 3%;"><input type="checkbox" id="check-all-analysis" title="全选" aria-label="全选"></th>
+                <th style="width: 7%;">ASIN</th>
+                <th style="width: 22%;">差异化分析结果</th>
+                <th style="width: 12%;">分析字段名</th>
+                <th style="width: 36%;">GPT 总结与优化</th>
+                <th style="width: 10%;">操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for tr in analysis_table_rows %}
+                {% with item=tr.analysis %}
+                {# 主行 #}
+                <tr class="main-row" data-asin="{{ item.asin }}">
+                    <td style="vertical-align:middle;">
+                        <input type="checkbox" name="asins" value="{{ item.asin }}" class="row-check-analysis" form="form-batch-analysis">
+                    </td>
+                    <td class="asin-cell">{{ item.asin }}</td>
+                    <td class="listing-cell" title="{{ tr.differentiation_preview }}">
+                        <span class="listing-preview" style="max-width: 400px">{{ tr.differentiation_preview }}</span>
+                        <button type="button" class="listing-expand-btn" data-asin="{{ item.asin }}">
+                            展开
+                        </button>
+                    </td>
+                    <td colspan="2" class="summary-cell">
+                        <span class="placeholder-text">点击右侧按钮查看分析详情</span>
+                    </td>
+                    <td>
+                        <button type="button" class="toggle-btn" data-state="hidden">显示</button>
+                        <form action="{% url 'delete_analysis_row' item.asin %}" method="post" style="display:inline;margin-left:8px;"
+                              onsubmit="return confirm('确定删除该条分析记录？');">
+                            {% csrf_token %}
+                            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+                            {% include "includes/preserve_get.html" %}
+                            <button type="submit" class="del-btn">删除</button>
+                        </form>
+                    </td>
+                </tr>
+
+                {# 三个详情行：对标 ASIN 分析、ASIN 集群分析、差异化分析（按 category 排序） #}
+                {% for detail in item.details.all %}
+                    <tr class="detail-row hidden" data-parent="{{ item.asin }}">
+                        <td> </td>
+                        <td class="asin-cell"> </td>
+                        <td class="listing-cell"> </td>
+                        <td>
+                            <strong style="color:#1d1d1f;">{{ detail.get_category_display }}</strong>
+                        </td>
+                        <td>
+                            <div class="gpt-summary-cell">
+                                <span class="gpt-preview">{{ detail.gpt_summary|truncatechars:60 }}</span>
+                                <button class="gpt-expand-btn"
+                                        data-fulltext="{{ detail.gpt_summary|escape }}"
+                                        data-category="{{ detail.get_category_display }}">展开
+                                </button>
+                            </div>
+                        </td>
+                        <td></td>
+                    </tr>
+                {% endfor %}
+                {% endwith %}
+            {% empty %}
+                <tr>
+                    <td colspan="6" style="padding: 48px; text-align: center; color: #86868b;">
+                        暂无分析记录
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "includes/pagination.html" with page_obj=page_obj pagination_qs=pagination_qs %}
+    {# Listing 对照模态：左全文 / 右原文本 + GPT 分析 #}
+    <div id="listing-compare-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="modal-card compare-modal-card" style="max-width: 2620px;height: 100%;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="listing-compare-title">对照检查</h3>
+                <button type="button" class="modal-close-btn listing-compare-close" aria-label="关闭">&times;</button>
+            </div>
+            <div class="compare-modal-body">
+                <div class="compare-col-left" style="min-width: 42%">
+                    <div class="compare-section-title">差异化分析产出结果</div>
+                    <div class="compare-md" id="listing-compare-md"></div>
+                </div>
+                <div class="compare-col-right" id="listing-compare-right"></div>
+            </div>
+        </div>
+    </div>
+
+    {# VOC 弹窗：DOM 与样式与「原文本」页 voc-modal 一致 #}
+    <div id="voc-expand-modal" class="voc-modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="voc-modal-card" role="dialog" aria-modal="true" aria-label="VOC 详情" style="max-width: 1800px">
+            <div class="voc-modal-header">
+                <div class="voc-modal-title" id="voc-expand-modal-title">VOC</div>
+                <button type="button" class="voc-modal-close voc-expand-close" aria-label="关闭">&times;</button>
+            </div>
+            <div class="voc-modal-body" id="voc-expand-modal-body"></div>
+        </div>
+    </div>
+
+    {# GPT 总结单独展开（保留 Markdown 浮层） #}
+    <div id="gpt-markdown-modal" class="modal-overlay" style="display: none;" aria-hidden="true">
+        <div class="modal-card" style="min-width: 1600px">
+            <div class="modal-header">
+                <h3 class="modal-title" id="gpt-markdown-title">GPT 总结与优化</h3>
+                <button type="button" class="modal-close-btn gpt-markdown-close" aria-label="关闭">&times;</button>
+            </div>
+            <div class="modal-body" id="gpt-markdown-body"></div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_scripts %}
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="{% static 'js/shulex_voc_render.js' %}"></script>
+    <script src="{% static 'js/ask_rufus_render.js' %}"></script>
+    <script>
+        (function () {
+            function renderMarkdown(text) {
+                if (window.marked) {
+                    return window.marked.parse(text || "");
+                }
+                return (text || "").replace(/\n/g, "<br>");
+            }
+
+            function getComparePayload() {
+                const el = document.getElementById('compare-payload');
+                if (!el) return {};
+                try {
+                    return JSON.parse(el.textContent);
+                } catch (err) {
+                    return {};
+                }
+            }
+
+            function escapeAttr(s) {
+                return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+            }
+
+            function buildKeywordsHtml(list) {
+                const arr = Array.isArray(list) ? list : [];
+                if (!arr.length) {
+                    return '<span class="compare-muted">暂无关键词</span>';
+                }
+                return '<div style="display:flex;flex-wrap:wrap;">' + arr.map(function (kw) {
+                    return '<span class="chip blue" title="' + escapeAttr(kw) + '">' + escapeAttr(kw) + '</span>';
+                }).join('') + '</div>';
+            }
+
+            function buildAskRufusHtml(ask) {
+                if (window.AskRufusRender && window.AskRufusRender.buildListHtml) {
+                    return window.AskRufusRender.buildListHtml(ask, { compact: false });
+                }
+                return '<span class="compare-muted">暂无 Ask Rufus</span>';
+            }
+
+            var COMPARE_RIGHT_DETAIL_ORDER = ['benchmark', 'cluster'];
+
+            function fillCompareRight(rightEl, data) {
+                var html = '';
+                html += '<div class="compare-section"><div class="compare-section-title">原文本数据</div>';
+                html += '<div class="compare-block-title">关键词</div>' + buildKeywordsHtml(data.keywords) + '</div>';
+                html += '<div class="compare-section"><div class="compare-block-title">Ask Rufus</div>' + buildAskRufusHtml(data.ask_rufus) + '</div>';
+                html += '<div class="compare-section">';
+                html += '<div class="compare-block-title">对标与集群 VOC</div>';
+                html += '<p class="compare-muted" style="margin:0 0 10px;font-size:0.85rem;">完整 VOC 数据量较大，请点击下方按钮在独立弹窗中查看。</p>';
+                html += '<button type="button" class="voc-modal-open-btn" style="padding:8px 18px;border-radius:999px;border:1px solid #d0d5dd;background:#fff;font-weight:600;color:#344054;cursor:pointer;font-size:0.86rem;">展开 VOC</button>';
+                html += '</div>';
+                    html += '<div class="compare-section"><div class="compare-section-title">分析结果（对标 / 集群 · GPT 总结与优化）</div>';
+                COMPARE_RIGHT_DETAIL_ORDER.forEach(function (cat) {
+                    var d = (data.details || {})[cat];
+                    if (!d) return;
+                    html += '<div class="compare-section" style="margin-bottom:18px;">';
+                    html += '<div class="compare-gpt-label">' + escapeAttr(d.label || cat) + '</div>';
+                    html += '<div class="compare-gpt-md">' + renderMarkdown(d.gpt_summary || '') + '</div>';
+                    html += '</div>';
+                });
+                html += '</div>';
+                rightEl.innerHTML = html;
+            }
+
+            // ---------- 折叠/展开详情行 ----------
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const mainRow = this.closest('tr');
+                    const asin = mainRow.dataset.asin;
+                    const detailRows = document.querySelectorAll(`.detail-row[data-parent="${asin}"]`);
+                    const isHidden = detailRows[0]?.classList.contains('hidden');
+
+                    if (isHidden) {
+                        detailRows.forEach(row => row.classList.remove('hidden'));
+                        this.textContent = '隐藏';
+                        this.classList.add('show');
+                        this.dataset.state = 'shown';
+                        mainRow.querySelector('.placeholder-text').textContent = '';
+                    } else {
+                        detailRows.forEach(row => row.classList.add('hidden'));
+                        this.textContent = '显示';
+                        this.classList.remove('show');
+                        this.dataset.state = 'hidden';
+                        mainRow.querySelector('.placeholder-text').textContent = '点击右侧按钮查看分析详情';
+                    }
+                });
+            });
+
+            const compareModal = document.getElementById('listing-compare-modal');
+            const compareMd = document.getElementById('listing-compare-md');
+            const compareRight = document.getElementById('listing-compare-right');
+            const compareTitle = document.getElementById('listing-compare-title');
+
+            const vocModal = document.getElementById('voc-expand-modal');
+            const vocModalBody = document.getElementById('voc-expand-modal-body');
+            const vocModalTitle = document.getElementById('voc-expand-modal-title');
+            var vocExpandStack = [];
+
+            if (typeof window.installVocExpandForModal === 'function' && vocModalBody && vocModalTitle) {
+                window.installVocExpandForModal(vocModalBody, vocModalTitle, {
+                    stack: vocExpandStack,
+                    getFallbackRawVoc: function () { return null; }
+                });
+            }
+
+            const gptModal = document.getElementById('gpt-markdown-modal');
+            const gptBody = document.getElementById('gpt-markdown-body');
+            const gptTitle = document.getElementById('gpt-markdown-title');
+
+            function closeCompareModal() {
+                if (!compareModal) return;
+                compareModal.style.display = 'none';
+                compareModal.setAttribute('aria-hidden', 'true');
+            }
+
+            function closeGptModal() {
+                if (!gptModal) return;
+                gptModal.style.display = 'none';
+                gptModal.setAttribute('aria-hidden', 'true');
+            }
+
+            function closeVocModal() {
+                if (!vocModal) return;
+                if (vocExpandStack.length > 0 && vocModalBody && vocModalTitle) {
+                    var prev = vocExpandStack.pop();
+                    vocModalTitle.textContent = prev.title;
+                    vocModalBody.innerHTML = prev.html;
+                    vocModalBody.__vocRawData = prev.rawVoc;
+                    return;
+                }
+                vocModal.style.display = 'none';
+                vocModal.setAttribute('aria-hidden', 'true');
+                if (vocModalBody) {
+                    vocModalBody.innerHTML = '';
+                    vocModalBody.__vocRawData = null;
+                }
+                vocExpandStack.length = 0;
+            }
+
+            function openVocModal(row, asin) {
+                if (!vocModal || !vocModalBody) return;
+                vocExpandStack.length = 0;
+                if (vocModalTitle) vocModalTitle.textContent = 'VOC - ' + (asin || '');
+                var vocPayload = row && row.voc_bundle ? row.voc_bundle : (row && row.voc);
+                vocModalBody.__vocRawData = vocPayload || null;
+                if (!vocPayload) {
+                    vocModalBody.innerHTML = '<p class="compare-muted">无 VOC 数据（请确认「原文本」中已存在该 ASIN 及 VOC）</p>';
+                } else if (typeof window.renderShulexVocHtml === 'function') {
+                    vocModalBody.innerHTML = window.renderShulexVocHtml(vocPayload, { embedFull: false });
+                } else {
+                    try {
+                        vocModalBody.innerHTML = '<pre class="voc-pre">' + escapeAttr(JSON.stringify(vocPayload, null, 2)) + '</pre>';
+                    } catch (err) {
+                        vocModalBody.innerHTML = '<span class="compare-muted">无法展示 VOC</span>';
+                    }
+                }
+                vocModal.style.display = 'flex';
+                vocModal.setAttribute('aria-hidden', 'false');
+            }
+
+            document.querySelectorAll('.listing-expand-btn').forEach(btn => {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    const asin = this.dataset.asin;
+                    const payload = getComparePayload();
+                    const row = payload[asin];
+                    if (compareTitle) compareTitle.textContent = '对照检查 — ' + (asin || '');
+                    if (compareModal) compareModal.dataset.currentAsin = asin || '';
+                    var diffMd = '';
+                    if (row && row.details && row.details.differentiation) {
+                        diffMd = row.details.differentiation.gpt_summary || '';
+                    }
+                    if (compareMd) {
+                        compareMd.innerHTML = diffMd.trim()
+                            ? renderMarkdown(diffMd)
+                            : '<p class="compare-muted">暂无差异化分析内容（请先完成 AI 差异化分析）。</p>';
+                    }
+                    if (compareRight) {
+                        if (row) fillCompareRight(compareRight, row);
+                        else {
+                            compareRight.innerHTML = '<p class="compare-muted">未找到该 ASIN 的原文本缓存。</p>';
+                        }
+                    }
+                    if (compareModal) {
+                        compareModal.style.display = 'flex';
+                        compareModal.setAttribute('aria-hidden', 'false');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.gpt-expand-btn').forEach(btn => {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    const fullText = this.dataset.fulltext;
+                    const category = this.dataset.category;
+                    if (gptTitle) gptTitle.textContent = 'GPT 总结与优化 — ' + (category || '');
+                    if (gptBody) gptBody.innerHTML = renderMarkdown(fullText);
+                    if (gptModal) {
+                        gptModal.style.display = 'flex';
+                        gptModal.setAttribute('aria-hidden', 'false');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.listing-compare-close').forEach(function (b) {
+                b.addEventListener('click', closeCompareModal);
+            });
+            if (compareModal) {
+                compareModal.addEventListener('click', function (e) {
+                    if (e.target === compareModal) closeCompareModal();
+                });
+                compareModal.addEventListener('click', function (e) {
+                    var opener = e.target.closest('.voc-modal-open-btn');
+                    if (!opener) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var curAsin = compareModal.dataset.currentAsin || '';
+                    var payload = getComparePayload();
+                    var row = curAsin ? payload[curAsin] : null;
+                    openVocModal(row, curAsin);
+                });
+            }
+
+            document.querySelectorAll('.voc-expand-close').forEach(function (b) {
+                b.addEventListener('click', closeVocModal);
+            });
+            if (vocModal) {
+                vocModal.addEventListener('click', function (e) {
+                    if (e.target === vocModal) {
+                        vocExpandStack.length = 0;
+                        closeVocModal();
+                    }
+                });
+            }
+
+            document.querySelectorAll('.gpt-markdown-close').forEach(function (b) {
+                b.addEventListener('click', closeGptModal);
+            });
+            if (gptModal) {
+                gptModal.addEventListener('click', function (e) {
+                    if (e.target === gptModal) closeGptModal();
+                });
+            }
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                if (compareModal && compareModal.style.display === 'flex') closeCompareModal();
+                if (gptModal && gptModal.style.display === 'flex') closeGptModal();
+                if (vocModal && vocModal.style.display === 'flex') closeVocModal();
+            });
+
+            const chkAllAnalysis = document.getElementById('check-all-analysis');
+            if (chkAllAnalysis) {
+                chkAllAnalysis.addEventListener('change', function () {
+                    document.querySelectorAll('.row-check-analysis').forEach(cb => { cb.checked = chkAllAnalysis.checked; });
+                });
+            }
+        })();
+    </script>
+{% endblock %}
