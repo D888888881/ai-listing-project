@@ -662,16 +662,19 @@
     </div>
     {% endif %}
 
-    <form method="get" action="{% url 'ai_image_gen' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
+    <form method="get" action="{% url 'ai_image_gen' %}" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:16px; flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
                style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;">
         <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;border-radius: 100px;">搜索</button>
+        </div>
+        {% include "includes/uploader_filter.html" %}
         <button type="button" class="btn-batch-fetch" id="btn-batch-fetch-images">批量获取图片</button>
         <button type="button" class="btn-batch-need btn-batch-need-main" id="btn-batch-main-need">生成主图图需</button>
         <button type="button" class="btn-batch-need btn-batch-need-aplus" id="btn-batch-aplus-need">生成APlus图需</button>
         <span id="toolbar-selected-hint" style="font-size:0.82rem;color:#667085;">请先勾选表格中的 ASIN</span>
         {% if search_q %}
-        <a href="{% url 'ai_image_gen' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+        <a href="{% url 'ai_image_gen' %}{% if filter_user_id %}?filter_user={{ filter_user_id }}{% endif %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
         {% endif %}
     </form>
 
@@ -695,6 +698,7 @@
                     <input type="checkbox" id="asin-pick-all" class="asin-pick-checkbox" title="全选本页" aria-label="全选本页">
                 </th>
                 <th style="width:250px;">ASIN</th>
+                <th style="width:100px;">上传者</th>
                 <th style="min-width:180px;">主图图需</th>
                 <th style="min-width:180px;">APlus图需</th>
                 <th style="width:350px;">原图</th>
@@ -709,6 +713,7 @@
                     <input type="checkbox" class="asin-pick-checkbox" value="{{ row.asin }}" aria-label="选择 {{ row.asin }}">
                 </td>
                 <td><strong style="color:#0071e3;">{{ row.asin }}</strong></td>
+                <td style="font-size:0.85rem; color:#475467;">{% include "includes/uploader_name.html" with obj=row.orig %}</td>
                 <td>
                     <textarea class="ai-img-ta" name="main_image_requirements" form="ai-img-save-{{ forloop.counter0 }}" rows="8" placeholder="主图构图、文案、场景等要求">{{ row.main_image_requirements }}</textarea>
                 </td>
@@ -1340,7 +1345,7 @@
     }
 
     function postForm(url, body, timeoutMs) {
-        var ms = timeoutMs || 120000;
+        var ms = timeoutMs || 460000;
         var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
         var timer = controller ? setTimeout(function () {
             controller.abort();

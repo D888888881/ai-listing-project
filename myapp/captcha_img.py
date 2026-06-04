@@ -33,7 +33,11 @@ def _pick_font(size: int):
                 return ImageFont.truetype(str(p), size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    # 兜底：Pillow 10+ 可指定 size；仍明显小于 TrueType，生产环境应 bundled 字体
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def generate_captcha_png() -> Tuple[str, io.BytesIO]:
@@ -52,7 +56,7 @@ def generate_captcha_png() -> Tuple[str, io.BytesIO]:
     image = Image.new("RGB", (w, h), bg)
     draw = ImageDraw.Draw(image)
 
-    font_large = _pick_font(28)
+    font_large = _pick_font(29)
 
     # 干扰曲线
     for _ in range(30):

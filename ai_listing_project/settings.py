@@ -15,6 +15,16 @@ from pathlib import Path
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# 本地/Docker 优先加载 .env（该文件不提交 Git）
+_env_path = BASE_DIR / ".env"
+if _env_path.is_file():
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(_env_path)
+    except ImportError:
+        pass
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -101,13 +111,20 @@ WSGI_APPLICATION = 'ai_listing_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+_db_password = os.environ.get("DB_PASSWORD") or os.environ.get("MYSQL_PASSWORD", "")
+# 本地 runserver（DEBUG）且未配置 .env 时，回退到本机 MySQL 常用配置
+if not _db_password and os.environ.get("DEBUG", "true").lower() in ("1", "true", "yes"):
+    _db_host = os.environ.get("DB_HOST", "127.0.0.1")
+    if _db_host in ("127.0.0.1", "localhost"):
+        _db_password = "201314"
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         # 兼容 Docker 场景：优先读 DB_*，缺失时回退到 MYSQL_*。
         'NAME': os.environ.get('DB_NAME') or os.environ.get('MYSQL_DATABASE', 'ai_listing'),
         'USER': os.environ.get('DB_USER') or os.environ.get('MYSQL_USER', 'root'),
-        'PASSWORD': os.environ.get('DB_PASSWORD') or os.environ.get('MYSQL_PASSWORD', ''),
+        'PASSWORD': _db_password,
         'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
         'PORT': os.environ.get('DB_PORT', '3306'),
         'OPTIONS': {
@@ -238,7 +255,7 @@ NANO_BANANA_BATCH_USE_THREADS = os.environ.get("NANO_BANANA_BATCH_USE_THREADS", 
 # 生图失败不重试（1 = 只请求一次）
 NANO_BANANA_VARIANT_MAX_RETRIES = int(os.environ.get("NANO_BANANA_VARIANT_MAX_RETRIES", "1"))
 NANO_BANANA_VARIANT_RETRY_DELAY = float(os.environ.get("NANO_BANANA_VARIANT_RETRY_DELAY", "2"))
-NANO_BANANA_HTTP_TIMEOUT = float(os.environ.get("NANO_BANANA_HTTP_TIMEOUT", "360"))
+NANO_BANANA_HTTP_TIMEOUT = float(os.environ.get("NANO_BANANA_HTTP_TIMEOUT", "460"))
 NANO_BANANA_POLL_MAX_WAIT = float(os.environ.get("NANO_BANANA_POLL_MAX_WAIT", "360"))
 NANO_BANANA_POLL_INTERVAL = float(os.environ.get("NANO_BANANA_POLL_INTERVAL", "2"))
 NANO_BANANA_PARALLEL_VARIANTS = os.environ.get("NANO_BANANA_PARALLEL_VARIANTS", "true").lower() in (
@@ -248,7 +265,7 @@ NANO_BANANA_PARALLEL_VARIANTS = os.environ.get("NANO_BANANA_PARALLEL_VARIANTS", 
 )
 # 产品原生图：优先 media 公网 URL；未配置时本地图用 base64（带进程内缓存）
 # 主图-副图 / A+ 场景图仅使用 https Listing URL，不受此项影响
-NANO_BANANA_PREFER_URL_REFS = os.environ.get("NANO_BANANA_PREFER_URL_REFS", "true").lower() in (
+NANO_BANANA_PREFER_URL_REFS = os.environ.get("NANO_BANANA_PREFER_URL_REFS", "false").lower() in (
     "1",
     "true",
     "yes",

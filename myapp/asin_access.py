@@ -61,6 +61,61 @@ def filter_original_by_user_id(
     return qs.filter(Q(created_by_id=user_id) | Q(assigned_to_id=user_id))
 
 
+def filter_original_by_uploader_id(
+    qs: QuerySet[OriginalAsinData], user_id: Optional[int]
+) -> QuerySet[OriginalAsinData]:
+    """超级管理员按上传者（created_by）筛选。"""
+    if not user_id:
+        return qs
+    return qs.filter(created_by_id=user_id)
+
+
+def filter_analysis_by_uploader_id(
+    qs: QuerySet[AsinAnalysis], user_id: Optional[int]
+) -> QuerySet[AsinAnalysis]:
+    if not user_id:
+        return qs
+    return qs.filter(
+        Exists(
+            OriginalAsinData.objects.filter(
+                created_by_id=user_id,
+                asin__iexact=OuterRef("asin"),
+            )
+        )
+    )
+
+
+def parse_uploader_filter_user_id(user: AbstractBaseUser, request) -> Optional[int]:
+    if not user or not user.is_authenticated or not user.is_superuser:
+        return None
+    raw = (getattr(request, "GET", {}).get("filter_user") or "").strip()
+    if raw.isdigit():
+        return int(raw)
+    return None
+
+
+def uploader_filter_clear_url(request) -> str:
+    """保留除 filter_user 外的 GET 参数，用于「清除上传者筛选」链接。"""
+    qd = request.GET.copy()
+    qd.pop("filter_user", None)
+    encoded = qd.urlencode()
+    if encoded:
+        return f"{request.path}?{encoded}"
+    return request.path
+
+
+def uploader_filter_context(user: AbstractBaseUser, request) -> dict:
+    if not user or not user.is_authenticated or not user.is_superuser:
+        return {}
+    filter_user_id = parse_uploader_filter_user_id(user, request)
+    return {
+        "show_uploader_filter": True,
+        "filter_user_id": filter_user_id or "",
+        "uploader_filter_users": list(get_active_users_for_assign()),
+        "uploader_filter_clear_url": uploader_filter_clear_url(request),
+    }
+
+
 def stamp_created_by_if_empty(obj: OriginalAsinData, user: AbstractBaseUser) -> bool:
     """若尚无上传者则记为当前用户；返回是否写入。"""
     if not user or not user.is_authenticated or obj.created_by_id:

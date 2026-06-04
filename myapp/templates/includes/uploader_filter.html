@@ -1,0 +1,17 @@
+{% if request.user.is_superuser %}
+<div class="uploader-filter-fields" style="display:flex; flex-direction:column; gap:6px;">
+  <div class="field-label" style="margin-bottom:0;margin-left:3px;">按上传者筛选</div>
+  <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <select name="filter_user" style="min-width:160px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+      <option value="">全部上传者</option>
+      {% for u in uploader_filter_users %}
+      <option value="{{ u.pk }}" {% if filter_user_id == u.pk %}selected{% endif %}>{{ u.username }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;">筛选</button>
+    {% if filter_user_id %}
+      <a href="{{ uploader_filter_clear_url }}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除上传者筛选</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

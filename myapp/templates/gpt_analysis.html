@@ -40,6 +40,7 @@
             {% endif %}
           </div>
         </div>
+        {% include "includes/uploader_filter.html" %}
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-bottom:2px;">
           <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:0.9rem; color:#1d1d1f;">
             <input type="checkbox" name="show_calculated" value="1" {% if show_calculated %}checked{% endif %} onchange="this.form.submit()">
@@ -78,6 +79,7 @@
           <tr>
             <th style="width:40px; padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">选</th>
             <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">ASIN</th>
+            <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">上传者</th>
             <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">状态</th>
             <th style="padding:12px; text-align:left; border-bottom:2px solid #e8e8ed; color:#86868b;">操作</th>
           </tr>
@@ -89,6 +91,7 @@
                 <input type="checkbox" name="asins" value="{{ row.orig.asin }}" form="form-gpt-batch" {% if row.is_processing %}disabled{% endif %}>
               </td>
               <td style="padding:12px; font-weight:600; vertical-align:middle;">{{ row.orig.asin }}</td>
+              <td style="padding:12px; vertical-align:middle; font-size:0.85rem;">{% include "includes/uploader_name.html" with obj=row.orig %}</td>
               <td style="padding:12px; vertical-align:middle;">
                 {% if row.is_processing %}
                   <span style="color:#0071e3; font-size:0.85rem;">分析中...</span>
@@ -114,7 +117,7 @@
             </tr>
           {% empty %}
             <tr>
-              <td colspan="4" style="padding:24px; text-align:center; color:#98a2b3;">
+              <td colspan="5" style="padding:24px; text-align:center; color:#98a2b3;">
                 {% if search_q %}
                   没有匹配「{{ search_q }}」的 ASIN。请调整关键字，或
                   <a href="{% url 'gpt_analysis' %}{% if show_calculated %}?show_calculated=1{% endif %}" style="color:#0071e3;">清除搜索</a> 后重试。

@@ -333,13 +333,16 @@
     </div>
     {% endif %}
 
-    <form method="get" action="{% url 'ai_listing' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
-        <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
-               style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;">
-        <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;border-radius: 100px;">搜索</button>
-        {% if search_q %}
-        <a href="{% url 'ai_listing' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
-        {% endif %}
+    <form method="get" action="{% url 'ai_listing' %}" style="display:flex; gap:16px; align-items:flex-end; margin-bottom:16px; flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
+                   style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;">
+            <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;border-radius: 100px;">搜索</button>
+            {% if search_q %}
+            <a href="{% url 'ai_listing' %}{% if filter_user_id %}?filter_user={{ filter_user_id }}{% endif %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+            {% endif %}
+        </div>
+        {% include "includes/uploader_filter.html" %}
     </form>
 
     <div class="ai-hidden-forms" aria-hidden="true">
@@ -360,6 +363,7 @@
             <tr>
                 <th style="width:40px;">选</th>
                 <th style="white-space:nowrap;">ASIN</th>
+                <th style="white-space:nowrap;">上传者</th>
                 <th style="min-width:140px;">关键词</th>
                 <th style="min-width:180px;">Rufus（JSON）</th>
                 <th style="min-width:160px;">VOC定位</th>
@@ -377,6 +381,7 @@
                            class="asin-pick-radio">
                 </td>
                 <td><strong style="color:#0071e3;">{{ row.asin }}</strong></td>
+                <td style="font-size:0.85rem; color:#475467; white-space:nowrap;">{% include "includes/uploader_name.html" with obj=row.orig %}</td>
                 <td>
                     <textarea class="ai-listing-ta" name="keywords_text" form="ai-save-{{ forloop.counter0 }}" rows="4" placeholder="每行一个关键词，或用英文逗号分隔">{{ row.keywords_text }}</textarea>
                 </td>
@@ -404,7 +409,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="9" style="padding:40px;text-align:center;color:#86868b;">暂无分析记录，请先在「AI 差异化分析」中完成分析。</td>
+                <td colspan="10" style="padding:40px;text-align:center;color:#86868b;">暂无分析记录，请先在「AI 差异化分析」中完成分析。</td>
             </tr>
             {% endfor %}
             </tbody>

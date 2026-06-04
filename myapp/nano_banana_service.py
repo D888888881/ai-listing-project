@@ -146,7 +146,7 @@ def _is_transient_api_error(exc: BaseException) -> bool:
     )
 
 
-def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 120) -> dict[str, Any]:
+def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 160) -> dict[str, Any]:
     api_key = _nano_api_key()
     if not api_key:
         raise RuntimeError("未配置 NANO_BANANA_API_KEY")

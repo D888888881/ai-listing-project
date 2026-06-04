@@ -51,32 +51,21 @@
           </div>
           <button type="submit" class="btn-pill btn-pill-primary" style="background:#e0f2fe;color:#026AA2;">导入 VOC 集群</button>
         </form>
-        {% if is_asin_admin %}
-        <form method="get" action="{% url 'original_text_list' %}" style="display:flex; flex-direction:column; gap:6px;">
-          <div class="field-label" style="margin-bottom:0;margin-left: 3px">按用户筛选</div>
-          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
-            <select name="filter_user" style="min-width:160px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
-              <option value="">全部用户</option>
-              {% for u in assignable_users %}
-              <option value="{{ u.pk }}" {% if filter_user_id == u.pk %}selected{% endif %}>{{ u.username }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit" class="btn-pill btn-pill-primary">筛选</button>
-            {% if filter_user_id %}
-              <a href="{% url 'original_text_list' %}{% if search_q %}?q={{ search_q|urlencode }}{% endif %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除用户筛选</a>
-            {% endif %}
-          </div>
+        {% if request.user.is_superuser %}
+        <form method="get" action="{% url 'original_text_list' %}">
+          {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
+          {% include "includes/uploader_filter.html" %}
         </form>
         {% endif %}
         <form method="get" action="{% url 'original_text_list' %}" style="display:flex; flex-direction:column; gap:6px;">
           <div class="field-label" style="margin-bottom:0;margin-left: 3px">ASIN 搜索</div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            {% if filter_user_id %}<input type="hidden" name="filter_user" value="{{ filter_user_id }}">{% endif %}
             <input type="text" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字"
                    style="min-width:200px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;"/>
             <button type="submit" class="btn-pill btn-pill-primary">搜索</button>
             {% if search_q %}
-              <a href="{% url 'original_text_list' %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
+              <a href="{% url 'original_text_list' %}{% if filter_user_id %}?filter_user={{ filter_user_id }}{% endif %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
             {% endif %}
           </div>
         </form>

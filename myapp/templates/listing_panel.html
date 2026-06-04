@@ -87,14 +87,19 @@
     </div>
   {% endif %}
 
-  <form method="get" action="{% url 'listing_panel' %}" style="display:flex; gap:10px; align-items:center; margin-bottom:16px; flex-wrap:wrap;">
-    <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
-           style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
-    <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
-    {% if search_q %}
-      <a href="{% url 'listing_panel' %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
-    {% endif %}
+  <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:16px;">
+  <form method="get" action="{% url 'listing_panel' %}" style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <input type="search" name="q" value="{{ search_q|default:'' }}" placeholder="按 ASIN 搜索"
+             style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;">
+      <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
+      {% if search_q %}
+        <a href="{% url 'listing_panel' %}{% if filter_user_id %}?filter_user={{ filter_user_id }}{% endif %}" style="color:#0071e3;font-size:0.88rem;">清除</a>
+      {% endif %}
+    </div>
+    {% include "includes/uploader_filter.html" %}
   </form>
+  </div>
 
   <form method="post" action="{% url 'batch_delete_analysis' %}" id="form-listing-panel-batch" style="margin-bottom:12px;">
     {% csrf_token %}
@@ -113,6 +118,7 @@
         <tr>
           <th style="width:36px;padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;">选</th>
           <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;white-space:nowrap;">ASIN</th>
+          <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;white-space:nowrap;">上传者</th>
           <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:12%;">关键词</th>
           <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:14%;">Rufus</th>
           <th style="padding:12px;border-bottom:2px solid #e8e8ed;color:#86868b;text-align:left;width:18%;">VOC定位</th>
@@ -128,6 +134,7 @@
             <input type="checkbox" name="asins" value="{{ row.asin }}" form="form-listing-panel-batch">
           </td>
           <td style="padding:10px 8px; font-weight:600; color:#0071e3;">{{ row.asin }}</td>
+          <td style="padding:10px 8px; font-size:0.85rem;">{% include "includes/uploader_name.html" with obj=row.orig %}</td>
           <td style="padding:10px 8px;">
             {% if row.orig %}
               {% if row.keywords_list %}

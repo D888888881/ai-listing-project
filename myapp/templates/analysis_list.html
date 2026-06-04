@@ -25,17 +25,22 @@
         {% endif %}
 
         <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 8px;">
-          <form method="get" action="{% url 'analysis_list' %}" style="display:flex; flex-direction:column; gap:6px;">
-            <div style="font-size:0.8rem;font-weight:600;color:#86868b;text-transform:uppercase;letter-spacing:0.3px;">ASIN 搜索</div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-              <input type="text" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字"
-                     style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;"/>
-              <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
-              {% if search_q %}
-                <a href="{% url 'analysis_list' %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
-              {% endif %}
+          <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+          <form method="get" action="{% url 'analysis_list' %}" style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <div style="font-size:0.8rem;font-weight:600;color:#86868b;text-transform:uppercase;letter-spacing:0.3px;">ASIN 搜索</div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input type="text" name="q" value="{{ search_q|default:'' }}" placeholder="输入 ASIN 关键字"
+                       style="min-width:220px;padding:10px 12px;border-radius:12px;border:1px solid #e8e8ed;background:#fff;"/>
+                <button type="submit" style="background:#f0f5ff;border:none;padding:10px 18px;border-radius:14px;font-weight:600;color:#0071e3;cursor:pointer;">搜索</button>
+                {% if search_q %}
+                  <a href="{% url 'analysis_list' %}{% if filter_user_id %}?filter_user={{ filter_user_id }}{% endif %}" style="color:#0071e3;font-size:0.88rem;text-decoration:none;">清除</a>
+                {% endif %}
+              </div>
             </div>
+            {% include "includes/uploader_filter.html" %}
           </form>
+          </div>
           <form method="post" action="{% url 'batch_delete_analysis' %}" id="form-batch-analysis" style="display:flex; align-items:flex-end;">
             {% csrf_token %}
             {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
@@ -974,9 +979,10 @@
             <tr>
                 <th style="width: 3%;"><input type="checkbox" id="check-all-analysis" title="全选" aria-label="全选"></th>
                 <th style="width: 7%;">ASIN</th>
-                <th style="width: 22%;">差异化分析结果</th>
+                <th style="width: 8%;">上传者</th>
+                <th style="width: 20%;">差异化分析结果</th>
                 <th style="width: 12%;">分析字段名</th>
-                <th style="width: 36%;">GPT 总结与优化</th>
+                <th style="width: 34%;">GPT 总结与优化</th>
                 <th style="width: 10%;">操作</th>
             </tr>
             </thead>
@@ -989,6 +995,7 @@
                         <input type="checkbox" name="asins" value="{{ item.asin }}" class="row-check-analysis" form="form-batch-analysis">
                     </td>
                     <td class="asin-cell">{{ item.asin }}</td>
+                    <td style="font-size:0.85rem; color:#475467; vertical-align:middle;">{% include "includes/uploader_name.html" with obj=tr.orig %}</td>
                     <td class="listing-cell" title="{{ tr.differentiation_preview }}">
                         <span class="listing-preview" style="max-width: 400px">{{ tr.differentiation_preview }}</span>
                         <button type="button" class="listing-expand-btn" data-asin="{{ item.asin }}">
@@ -1015,6 +1022,7 @@
                     <tr class="detail-row hidden" data-parent="{{ item.asin }}">
                         <td> </td>
                         <td class="asin-cell"> </td>
+                        <td> </td>
                         <td class="listing-cell"> </td>
                         <td>
                             <strong style="color:#1d1d1f;">{{ detail.get_category_display }}</strong>
@@ -1034,7 +1042,7 @@
                 {% endwith %}
             {% empty %}
                 <tr>
-                    <td colspan="6" style="padding: 48px; text-align: center; color: #86868b;">
+                    <td colspan="7" style="padding: 48px; text-align: center; color: #86868b;">
                         暂无分析记录
                     </td>
                 </tr>

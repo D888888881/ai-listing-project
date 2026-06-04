@@ -49,12 +49,16 @@ from .gpt_analysis_service import (
 from .models import OriginalAsinData, AsinAnalysis, AsinAnalysisLock, UserProfile, AiListingGenerationHistory
 from .asin_access import (
     asin_analysis_qs_for_user,
+    filter_original_by_uploader_id,
     filter_original_by_user_id,
+    filter_analysis_by_uploader_id,
     get_active_users_for_assign,
     is_asin_admin,
     original_asin_qs_for_user,
+    parse_uploader_filter_user_id,
     stamp_created_by_if_empty,
     stamp_created_by_on_new_rows,
+    uploader_filter_context,
     user_can_access_asin,
 )
 from .ai_image_need_service import generate_image_need_for_asin
@@ -269,7 +273,7 @@ def _originals_list_for_upper_asins(
     if not cleaned:
         return []
     q_expr = reduce(operator.or_, [Q(asin__iexact=u) for u in cleaned])
-    qs = OriginalAsinData.objects.filter(q_expr)
+    qs = OriginalAsinData.objects.filter(q_expr).select_related("created_by")
     if user is not None and user.is_authenticated and not is_asin_admin(user):
         qs = qs.filter(Q(created_by=user) | Q(assigned_to=user))
     return list(qs)
@@ -284,7 +288,10 @@ def _deny_asin_access(request: HttpRequest, asin: str) -> HttpResponse:
 @login_required
 def analysis_list(request: HttpRequest) -> HttpResponse:
     q = (request.GET.get("q") or "").strip()
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
     records = asin_analysis_qs_for_user(request.user).prefetch_related("details").order_by("-created_at")
+    if filter_user_id:
+        records = filter_analysis_by_uploader_id(records, filter_user_id)
     if q:
         records = records.filter(asin__icontains=q)
     page_obj = paginate(request, records)
@@ -318,7 +325,11 @@ def analysis_list(request: HttpRequest) -> HttpResponse:
         diff_d = details_map.get("differentiation")
         diff_text = ((diff_d or {}).get("gpt_summary") or "").strip()
         preview = (diff_text[:100] + "…") if len(diff_text) > 100 else (diff_text or "（暂无差异化分析）")
-        analysis_table_rows.append({"analysis": item, "differentiation_preview": preview})
+        analysis_table_rows.append({
+            "analysis": item,
+            "differentiation_preview": preview,
+            "orig": o,
+        })
 
         voc_bundle: Any = None
         if o:
@@ -345,6 +356,7 @@ def analysis_list(request: HttpRequest) -> HttpResponse:
         "compare_payload": compare_payload,
         "page_obj": page_obj,
         "pagination_qs": pagination_querystring(request),
+        **uploader_filter_context(request.user, request),
     }
     return render(request, "analysis_list.html", context)
 
@@ -355,13 +367,21 @@ def listing_panel(request: HttpRequest) -> HttpResponse:
     Listing 面板：汇总原文本（关键词、Rufus）与差异化分析中的 VOC定位、差评改进方向及生成 Listing。
     """
     q = (request.GET.get("q") or "").strip()
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
     qs = asin_analysis_qs_for_user(request.user).prefetch_related("details").order_by("-created_at")
+    if filter_user_id:
+        qs = filter_analysis_by_uploader_id(qs, filter_user_id)
     if q:
         qs = qs.filter(asin__icontains=q)
     page_obj = paginate(request, qs)
     rows: list[dict[str, Any]] = []
     for a in page_obj.object_list:
-        orig = original_asin_qs_for_user(request.user).filter(asin__iexact=a.asin).first()
+        orig = (
+            original_asin_qs_for_user(request.user)
+            .select_related("created_by")
+            .filter(asin__iexact=a.asin)
+            .first()
+        )
         dm = {d.category: d for d in a.details.all()}
         diff = dm.get("differentiation")
         diff_md = (diff.gpt_summary or "").strip() if diff else ""
@@ -403,6 +423,7 @@ def listing_panel(request: HttpRequest) -> HttpResponse:
             "search_q": q,
             "page_obj": page_obj,
             "pagination_qs": pagination_querystring(request),
+            **uploader_filter_context(request.user, request),
         },
     )
 
@@ -527,7 +548,10 @@ def ai_listing(request: HttpRequest) -> HttpResponse:
         return redirect(next_url)
 
     q = (request.GET.get("q") or "").strip()
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
     qs = asin_analysis_qs_for_user(request.user).prefetch_related("details").order_by("-created_at")
+    if filter_user_id:
+        qs = filter_analysis_by_uploader_id(qs, filter_user_id)
     if q:
         qs = qs.filter(asin__icontains=q)
 
@@ -535,7 +559,12 @@ def ai_listing(request: HttpRequest) -> HttpResponse:
 
     rows: List[Dict[str, Any]] = []
     for a in page_obj.object_list:
-        orig = original_asin_qs_for_user(request.user).filter(asin__iexact=a.asin).first()
+        orig = (
+            original_asin_qs_for_user(request.user)
+            .select_related("created_by")
+            .filter(asin__iexact=a.asin)
+            .first()
+        )
         dm = {d.category: d for d in a.details.all()}
         diff = dm.get("differentiation")
         cluster = dm.get("cluster")
@@ -580,6 +609,7 @@ def ai_listing(request: HttpRequest) -> HttpResponse:
         rows.append(
             {
                 "asin": a.asin,
+                "orig": orig,
                 "keywords_list": keywords_list,
                 "keywords_text": "\n".join(keywords_list),
                 "ask_rufus": ar,
@@ -599,6 +629,7 @@ def ai_listing(request: HttpRequest) -> HttpResponse:
             "search_q": q,
             "page_obj": page_obj,
             "pagination_qs": pagination_querystring(request),
+            **uploader_filter_context(request.user, request),
         },
     )
 
@@ -1018,7 +1049,14 @@ def ai_image_gen(request: HttpRequest) -> HttpResponse:
             return redirect(next_url)
 
     q = (request.GET.get("q") or "").strip()
-    qs = original_asin_qs_for_user(request.user).order_by("-updated_at", "-created_at")
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
+    qs = (
+        original_asin_qs_for_user(request.user)
+        .select_related("created_by")
+        .order_by("-updated_at", "-created_at")
+    )
+    if filter_user_id:
+        qs = filter_original_by_uploader_id(qs, filter_user_id)
     if q:
         qs = qs.filter(asin__icontains=q)
     page_obj = paginate(request, qs)
@@ -1035,6 +1073,7 @@ def ai_image_gen(request: HttpRequest) -> HttpResponse:
         rows.append(
             {
                 "asin": o.asin,
+                "orig": o,
                 "main_image_requirements": (getattr(o, "main_image_requirements", None) or "").strip(),
                 "aplus_image_requirements": (getattr(o, "aplus_image_requirements", None) or "").strip(),
                 "original_images": orig_struct,
@@ -1065,6 +1104,7 @@ def ai_image_gen(request: HttpRequest) -> HttpResponse:
             "media_url": media_url,
             "images_per_module": int(getattr(settings, "NANO_BANANA_IMAGES_PER_MODULE", 3)),
             "parallel_workers": int(getattr(settings, "NANO_BANANA_MODULE_WORKERS", 6)),
+            **uploader_filter_context(request.user, request),
         },
     )
 
@@ -2174,18 +2214,14 @@ def original_text_list(request: HttpRequest) -> HttpResponse:
                 ignore_conflicts=True,
             )
     q = (request.GET.get("q") or "").strip()
-    filter_user_id: Optional[int] = None
-    if is_asin_admin(request.user):
-        raw_uid = (request.GET.get("filter_user") or "").strip()
-        if raw_uid.isdigit():
-            filter_user_id = int(raw_uid)
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
     qs = (
         original_asin_qs_for_user(request.user)
         .select_related("created_by", "assigned_to")
         .order_by("-updated_at", "-created_at")
     )
     if filter_user_id:
-        qs = filter_original_by_user_id(qs, filter_user_id)
+        qs = filter_original_by_uploader_id(qs, filter_user_id)
     if q:
         qs = qs.filter(asin__icontains=q)
     page_obj = paginate(request, qs)
@@ -2213,9 +2249,9 @@ def original_text_list(request: HttpRequest) -> HttpResponse:
         "pagination_qs": pagination_querystring(request),
         "is_asin_admin": is_asin_admin(request.user),
     }
-    if is_asin_admin(request.user):
-        ctx["assignable_users"] = list(get_active_users_for_assign())
-        ctx["filter_user_id"] = filter_user_id or ""
+    if request.user.is_superuser:
+        ctx.update(uploader_filter_context(request.user, request))
+        ctx["assignable_users"] = ctx.get("uploader_filter_users") or list(get_active_users_for_assign())
     return render(request, "original_text_list.html", ctx)
 
 
@@ -3403,11 +3439,18 @@ def gpt_analysis(request: HttpRequest) -> HttpResponse:
         return redirect(next_url)
 
     q = (request.GET.get("q") or "").strip()
+    filter_user_id = parse_uploader_filter_user_id(request.user, request)
     analyzed_set = set(
         asin_analysis_qs_for_user(request.user).values_list("asin", flat=True)
     )
     processing_set = set(AsinAnalysisLock.objects.values_list("asin", flat=True))
-    qs = original_asin_qs_for_user(request.user).order_by("-updated_at", "-created_at")
+    qs = (
+        original_asin_qs_for_user(request.user)
+        .select_related("created_by")
+        .order_by("-updated_at", "-created_at")
+    )
+    if filter_user_id:
+        qs = filter_original_by_uploader_id(qs, filter_user_id)
     if not show_calculated:
         qs = qs.exclude(asin__in=analyzed_set)
     if q:
@@ -3427,5 +3470,6 @@ def gpt_analysis(request: HttpRequest) -> HttpResponse:
             "search_q": q,
             "page_obj": page_obj,
             "pagination_qs": pagination_querystring(request),
+            **uploader_filter_context(request.user, request),
         },
     )
