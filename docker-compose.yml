@@ -23,6 +23,17 @@ services:
       retries: 20
       start_period: 20s
 
+  redis:
+    image: redis:7-alpine
+    container_name: ai_listing_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
   web:
     build:
       context: .
@@ -31,6 +42,8 @@ services:
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     env_file:
       - .env
@@ -46,17 +59,89 @@ services:
       USE_X_FORWARDED_HOST: ${USE_X_FORWARDED_HOST:-true}
       SITE_BASE_URL: ${SITE_BASE_URL:-http://localhost:8000}
       NANO_BANANA_MEDIA_PUBLIC_BASE: ${NANO_BANANA_MEDIA_PUBLIC_BASE:-http://localhost:8000/media}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     expose:
       - "8000"
     volumes:
       - media_data:/app/media
       - staticfiles_data:/app/staticfiles
+    deploy:
+      resources:
+        limits:
+          memory: 4G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/ai_listing/login"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE:-ai_listing}
+      DB_USER: ${MYSQL_USER:-ai_listing}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-change_me_db}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      CELERY_WORKER_QUEUES: ${CELERY_WORKER_QUEUES:-image_gen_high,image_gen}
+      CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-10}
+    command:
+      [
+        "sh",
+        "-c",
+        "celery -A ai_listing_project worker -Q $${CELERY_WORKER_QUEUES:-image_gen_high,image_gen} -c $${CELERY_WORKER_CONCURRENCY:-10} --loglevel=info",
+      ]
+    volumes:
+      - media_data:/app/media
+    deploy:
+      resources:
+        limits:
+          memory: 10G
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A ai_listing_project inspect ping --timeout 5 | grep -q OK"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+  flower:
+    profiles: ["ops"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+    command:
+      [
+        "celery",
+        "-A",
+        "ai_listing_project",
+        "flower",
+        "--port=5555",
+        "--broker_api=${CELERY_BROKER_URL:-redis://redis:6379/0}",
+      ]
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
 
   nginx:
     image: nginx:1.27-alpine

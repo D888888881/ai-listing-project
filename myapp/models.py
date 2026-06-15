@@ -212,3 +212,69 @@ class SystemSetting(models.Model):
             key=key,
             defaults={"value": (value or "").strip(), "updated_by": user},
         )
+
+
+class ImageGenJob(models.Model):
+    """批量生图异步任务（MySQL 持久化 + Redis 热状态）。"""
+
+    STATUS_PENDING = "pending"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+    STATUS_DEAD = "dead"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "等待中"),
+        (STATUS_RUNNING, "执行中"),
+        (STATUS_COMPLETED, "已完成"),
+        (STATUS_FAILED, "失败"),
+        (STATUS_DEAD, "死信(DLQ)"),
+        (STATUS_CANCELLED, "已停止"),
+    ]
+
+    job_id = models.CharField(max_length=64, unique=True, db_index=True, verbose_name="任务 ID")
+    celery_task_id = models.CharField(max_length=128, blank=True, default="", verbose_name="Celery 任务 ID")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="image_gen_jobs",
+        verbose_name="用户",
+    )
+    asin = models.CharField(max_length=20, db_index=True, verbose_name="ASIN")
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+        verbose_name="状态",
+    )
+    queue_name = models.CharField(max_length=64, blank=True, default="", verbose_name="队列")
+    priority = models.SmallIntegerField(default=0, verbose_name="优先级")
+    batch_size = models.PositiveIntegerField(default=0, verbose_name="批次张数")
+    added = models.PositiveIntegerField(default=0, verbose_name="成功张数")
+    orig_pk = models.PositiveIntegerField(default=0, verbose_name="OriginalAsinData PK")
+    user_notes = models.TextField(blank=True, default="", verbose_name="用户备注")
+    job_specs_json = models.JSONField(default=list, blank=True, verbose_name="任务规格")
+    errors_json = models.JSONField(default=list, blank=True, verbose_name="错误列表")
+    error_message = models.TextField(blank=True, default="", verbose_name="错误信息")
+    result_json = models.JSONField(null=True, blank=True, verbose_name="结果快照")
+    retry_count = models.PositiveSmallIntegerField(default=0, verbose_name="重试次数")
+    parent_job_id = models.CharField(max_length=64, blank=True, default="", db_index=True, verbose_name="来源任务")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "生图任务"
+        verbose_name_plural = "生图任务"
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["user", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.job_id[:8]}… {self.asin} [{self.status}]"

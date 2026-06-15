@@ -5,6 +5,7 @@ import json
 import logging
 import mimetypes
 import re
+import ssl
 import threading
 import time
 import uuid
@@ -14,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -22,6 +24,11 @@ from django.core.files.storage import default_storage
 
 from .ai_image_need_service import _normalize_original_images_struct
 from .models import OriginalAsinData
+from .redis_concurrency import (
+    get_redis_client,
+    global_redis_semaphore,
+    user_redis_semaphore,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +47,16 @@ def _per_user_api_limit() -> int:
     return int(getattr(settings, "NANO_BANANA_API_SEMAPHORE", 6))
 
 
+def _per_user_api_limit_for(user_id: int) -> int:
+    from .image_gen_config import api_per_user_limit_for_user_id
+
+    return api_per_user_limit_for_user_id(user_id)
+
+
 def _global_api_limit() -> int:
-    return max(1, int(getattr(settings, "NANO_BANANA_API_SEMAPHORE_GLOBAL", 24)))
+    from .image_gen_config import api_global_limit
+
+    return max(1, api_global_limit())
 
 
 def _global_api_semaphore_get() -> threading.Semaphore:
@@ -54,10 +69,12 @@ def _global_api_semaphore_get() -> threading.Semaphore:
 
 
 def _user_api_semaphore(user_id: int) -> threading.Semaphore:
+    limit = _per_user_api_limit_for(user_id)
     with _user_api_semaphores_guard:
-        if user_id not in _user_api_semaphores:
-            _user_api_semaphores[user_id] = threading.Semaphore(_per_user_api_limit())
-        return _user_api_semaphores[user_id]
+        cache_key = f"user:{user_id}:{limit}"
+        if cache_key not in _user_api_semaphores:
+            _user_api_semaphores[cache_key] = threading.Semaphore(limit)
+        return _user_api_semaphores[cache_key]
 
 
 @contextmanager
@@ -72,10 +89,39 @@ def nano_banana_user_scope(user_id: Optional[int]):
 
 
 class _ApiConcurrencyGuard:
-    """先占全站槽位，再占用户槽位；满则排队。每用户默认 6 路，互不挤占。"""
+    """先占全站槽位，再占用户槽位；满则排队。Redis 可用时跨进程共享。"""
 
     def __enter__(self) -> "_ApiConcurrencyGuard":
         uid = _generation_user_id.get() or 0
+        self._redis_tokens: list[tuple[Any, str]] = []
+        self._global_sem = None
+        self._user_sem = None
+
+        if get_redis_client() is not None:
+            try:
+                from .redis_concurrency import touch_semaphore_limits
+
+                touch_semaphore_limits(uid)
+                g_sem = global_redis_semaphore()
+                if g_sem is not None:
+                    self._redis_tokens.append((g_sem, g_sem.acquire()))
+                if uid > 0:
+                    u_sem = user_redis_semaphore(uid)
+                    if u_sem is not None:
+                        self._redis_tokens.append((u_sem, u_sem.acquire()))
+                if self._redis_tokens:
+                    return self
+            except Exception as exc:
+                for sem, token in reversed(self._redis_tokens):
+                    try:
+                        sem.release(token)
+                    except Exception:
+                        pass
+                self._redis_tokens = []
+                logger.warning(
+                    "Redis semaphore failed, fallback to in-process semaphores: %s", exc
+                )
+
         self._global_sem = _global_api_semaphore_get()
         self._user_sem = _user_api_semaphore(uid)
         self._global_sem.acquire()
@@ -83,8 +129,12 @@ class _ApiConcurrencyGuard:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        self._user_sem.release()
-        self._global_sem.release()
+        for sem, token in reversed(self._redis_tokens):
+            sem.release(token)
+        if self._user_sem is not None:
+            self._user_sem.release()
+        if self._global_sem is not None:
+            self._global_sem.release()
 
 
 _asin_generation_locks: dict[str, threading.Lock] = {}
@@ -100,6 +150,7 @@ def _asin_generation_lock(asin: str) -> threading.Lock:
 
 
 _IMAGES_PER_MODULE = int(getattr(settings, "NANO_BANANA_IMAGES_PER_MODULE", 3))
+_MAX_IMAGES_PER_RUN = int(getattr(settings, "NANO_BANANA_MAX_IMAGES_PER_RUN", 48))
 _MODULE_WORKERS = int(getattr(settings, "NANO_BANANA_MODULE_WORKERS", 6))
 _VARIANT_MAX_RETRIES = int(getattr(settings, "NANO_BANANA_VARIANT_MAX_RETRIES", 1))
 _VARIANT_RETRY_DELAY = float(getattr(settings, "NANO_BANANA_VARIANT_RETRY_DELAY", 2.0))
@@ -146,6 +197,10 @@ def _is_transient_api_error(exc: BaseException) -> bool:
     )
 
 
+def _https_ssl_context() -> ssl.SSLContext:
+    return ssl.create_default_context()
+
+
 def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 160) -> dict[str, Any]:
     api_key = _nano_api_key()
     if not api_key:
@@ -167,7 +222,10 @@ def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 160) 
             method="POST",
         )
         try:
-            with urlopen(req, timeout=timeout) as resp:
+            open_kw: dict[str, Any] = {"timeout": timeout}
+            if str(url).startswith("https://"):
+                open_kw["context"] = _https_ssl_context()
+            with urlopen(req, **open_kw) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             data = json.loads(raw)
             if not isinstance(data, dict):
@@ -184,6 +242,13 @@ def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 160) 
             except json.JSONDecodeError:
                 msg = err_body
             err = RuntimeError(f"Nano Banana API HTTP {exc.code}: {str(msg)[:500]}")
+            if exc.code == 429:
+                try:
+                    from .image_gen_metrics import increment_counter
+
+                    increment_counter("api_http_429")
+                except Exception:
+                    pass
             if exc.code >= 500 and attempt < max_attempts - 1:
                 time.sleep(_VARIANT_RETRY_DELAY * (attempt + 1))
                 last_err = err
@@ -196,8 +261,39 @@ def _http_post_json(url: str, payload: dict[str, Any], *, timeout: float = 160) 
                 continue
             if isinstance(exc, json.JSONDecodeError):
                 raise ValueError(f"API 返回非 JSON：{exc}") from exc
+            if isinstance(exc, OSError) and getattr(exc, "errno", None) == 2:
+                raise RuntimeError(
+                    "Nano Banana API 请求失败（HTTPS 证书环境缺失，errno=2）。"
+                    "请在 Docker 镜像中安装 ca-certificates 后 rebuild：docker compose up -d --build"
+                ) from exc
             raise RuntimeError(f"Nano Banana API 请求失败：{exc}") from exc
     raise RuntimeError(f"Nano Banana API 请求失败：{last_err}") from last_err
+
+
+def _http_get_json(url: str, params: dict[str, str], *, timeout: float = 60) -> dict[str, Any]:
+    api_key = _nano_api_key()
+    if not api_key:
+        raise RuntimeError("未配置 NANO_BANANA_API_KEY")
+    qs = urlencode({k: v for k, v in params.items() if v})
+    full_url = f"{url}?{qs}" if qs else url
+    req = Request(
+        full_url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "Connection": "close",
+        },
+        method="GET",
+    )
+    open_kw: dict[str, Any] = {"timeout": timeout}
+    if str(full_url).startswith("https://"):
+        open_kw["context"] = _https_ssl_context()
+    with urlopen(req, **open_kw) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError(f"API 返回非 JSON 对象：{raw[:300]}")
+    return data
 
 
 def _extract_image_urls(data: Any) -> list[str]:
@@ -269,7 +365,7 @@ def _poll_task_if_needed(initial: dict[str, Any]) -> dict[str, Any]:
     while time.time() < deadline:
         time.sleep(_POLL_INTERVAL)
         try:
-            polled = _http_post_json(result_url, {"id": task_id}, timeout=60)
+            polled = _http_get_json(result_url, {"id": task_id}, timeout=60)
         except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as e:
             logger.warning("nano banana poll error: %s", e)
             continue
@@ -279,8 +375,10 @@ def _poll_task_if_needed(initial: dict[str, Any]) -> dict[str, Any]:
         progress = polled.get("progress")
         if progress == 100 or st in ("success", "succeeded", "completed", "done"):
             return polled
-        if st in ("failed", "error"):
+        if st in ("failed", "error", "violation"):
             err = polled.get("error") or polled.get("failure_reason") or polled.get("message") or "生图失败"
+            if st == "violation":
+                err = f"内容违规：{err}"
             raise RuntimeError(str(err))
     raise TimeoutError(f"生图任务 {task_id} 超时（>{int(_POLL_MAX_WAIT)}s）")
 
@@ -367,7 +465,11 @@ def _build_generation_full_prompt(module_prompt: str, section: str, user_notes: 
 
 
 def _collect_generation_ref_images(orig: OriginalAsinData, section: str) -> list[str]:
-    from .ai_image_need_service import collect_native_api_refs, collect_section_api_refs
+    from .ai_image_need_service import (
+        collect_native_api_refs,
+        collect_section_api_refs,
+        format_section_ref_error,
+    )
 
     native_max = int(getattr(settings, "NANO_BANANA_NATIVE_MAX_REFS", 4))
     scene_max = int(getattr(settings, "NANO_BANANA_SCENE_MAX_REFS", 6))
@@ -384,10 +486,7 @@ def _collect_generation_ref_images(orig: OriginalAsinData, section: str) -> list
         max_images=scene_max,
     )
     if not scene_refs:
-        label = "主图-副图" if section == "main" else "A+ 图"
-        raise ValueError(
-            f"原图列暂无{label}的远程参考 URL，请先「获取图片」（Listing 图须为 https 链接）。"
-        )
+        raise ValueError(format_section_ref_error(orig, "main" if section == "main" else "aplus"))
 
     return native_refs + scene_refs
 
@@ -403,6 +502,7 @@ class _GenerationRefCache:
     def refs_for_section(self, section: str) -> list[str]:
         with self._lock:
             if section not in self._refs_by_section:
+                self.orig.refresh_from_db(fields=["original_images"])
                 self._refs_by_section[section] = _collect_generation_ref_images(self.orig, section)
             return self._refs_by_section[section]
 
@@ -913,13 +1013,30 @@ def _modules_per_parallel_wave() -> int:
 GenerationJob = tuple[str, str, dict[str, str], dict[str, Any], int]
 
 
+def _max_images_per_run() -> int:
+    return max(1, _MAX_IMAGES_PER_RUN)
+
+
+def _limit_jobs_per_run(jobs: list[GenerationJob]) -> list[GenerationJob]:
+    """单次点击/请求最多生成的张数（不含生成前已有的成品图）。"""
+    return jobs[: _max_images_per_run()]
+
+
+def _collect_all_missing_generation_jobs(
+    orig: OriginalAsinData,
+    plan: list[dict[str, Any]],
+    user_notes: str = "",
+) -> list[GenerationJob]:
+    return collect_missing_generation_jobs(orig, plan, user_notes=user_notes)
+
+
 def pending_jobs_payload(
     orig: OriginalAsinData,
     plan: list[dict[str, Any]],
     user_notes: str = "",
 ) -> list[dict[str, Any]]:
-    """供前端并行调度的待生成任务列表（每项一张图）。"""
-    jobs = collect_append_generation_jobs(orig, plan, user_notes=user_notes)
+    """供前端并行调度的待生成任务列表（每项一张图，仅补未满槽位，单次最多 _MAX_IMAGES_PER_RUN）。"""
+    jobs = _limit_jobs_per_run(_collect_all_missing_generation_jobs(orig, plan, user_notes=user_notes))
     out: list[dict[str, Any]] = []
     for module_key, section, module, _common, variant_index in jobs:
         out.append(
@@ -1138,7 +1255,19 @@ def _run_one_batch_job(
     user_notes: str,
     ref_cache: _GenerationRefCache,
     common_by_key: dict[str, dict[str, Any]],
+    progress_job_id: str | None = None,
 ) -> dict[str, Any]:
+    if progress_job_id:
+        from .image_gen_jobs import is_job_stopped
+
+        if is_job_stopped(progress_job_id):
+            return {
+                "added": 0,
+                "skipped": True,
+                "cancelled": True,
+                "module_key": spec.get("module_key"),
+                "variant_index": int(spec.get("variant_index") or 0),
+            }
     return _run_generation_job_by_pk(
         orig_pk,
         spec["module_key"],
@@ -1153,12 +1282,24 @@ def run_jobs_batch(
     orig: OriginalAsinData,
     job_specs: list[dict[str, Any]],
     user_notes: str = "",
+    progress_job_id: str | None = None,
 ) -> dict[str, Any]:
-    """服务端一批并行生图（单 HTTP 连接），避免浏览器多连接 Broken pipe。"""
+    """并行生图：最多 MODULE_WORKERS 路并发，完成一路立即补下一张（线程池队列）。"""
 
     if not job_specs:
         struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
         return {"added": 0, "results": [], "errors": [], "finished_images": struct}
+
+    orig.refresh_from_db(
+        fields=["original_images", "main_image_requirements", "aplus_image_requirements"]
+    )
+    from .ai_image_need_service import validate_generation_refs_for_plan
+
+    plan_for_validate = [
+        {"section": (spec.get("section") or (spec.get("module_key") or "main:0").split(":", 1)[0])}
+        for spec in job_specs
+    ]
+    validate_generation_refs_for_plan(orig, plan_for_validate)
 
     orig_pk = orig.pk
     workers = min(_MODULE_WORKERS, len(job_specs))
@@ -1199,6 +1340,15 @@ def run_jobs_batch(
     stagger = float(getattr(settings, "NANO_BANANA_BATCH_STAGGER_SEC", 0.5))
     use_threads = bool(getattr(settings, "NANO_BANANA_BATCH_USE_THREADS", True))
 
+    cancelled = False
+
+    def _is_cancelled() -> bool:
+        if not progress_job_id:
+            return False
+        from .image_gen_jobs import is_job_stopped
+
+        return is_job_stopped(progress_job_id)
+
     def _collect_payload(spec: dict[str, Any], payload: dict[str, Any]) -> None:
         nonlocal added_total
         title = spec.get("title") or spec.get("module_key") or "模块"
@@ -1207,6 +1357,21 @@ def run_jobs_batch(
             added_total += 1
         elif payload.get("error"):
             errors.append(f"{title} 第{int(spec['variant_index']) + 1}张：{payload['error']}")
+        if progress_job_id:
+            try:
+                from .image_gen_jobs import update_job_progress
+
+                orig.refresh_from_db(fields=["finished_images"])
+                update_job_progress(
+                    progress_job_id,
+                    added=added_total,
+                    batch_size=len(job_specs),
+                    errors=errors,
+                    orig=orig,
+                    processed=len(results),
+                )
+            except Exception as exc:
+                logger.debug("job progress update skipped: %s", exc)
 
     def _collect_exception(spec: dict[str, Any], exc: BaseException) -> None:
         title = spec.get("title") or spec.get("module_key") or "模块"
@@ -1218,7 +1383,8 @@ def run_jobs_batch(
     ran_parallel = False
     if use_threads and workers > 1:
         try:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
+            pool = ThreadPoolExecutor(max_workers=workers)
+            try:
                 futures = {
                     pool.submit(
                         copy_context().run,
@@ -1228,15 +1394,22 @@ def run_jobs_batch(
                         user_notes,
                         ref_cache,
                         common_by_key,
+                        progress_job_id,
                     ): spec
                     for spec in job_specs
                 }
                 for fut in as_completed(futures):
+                    if _is_cancelled():
+                        cancelled = True
+                        errors.append("用户已停止生图")
+                        break
                     spec = futures[fut]
                     try:
                         _collect_payload(spec, fut.result())
                     except Exception as e:
                         _collect_exception(spec, e)
+            finally:
+                pool.shutdown(wait=not cancelled, cancel_futures=cancelled)
             ran_parallel = True
         except RuntimeError as e:
             if "interpreter shutdown" not in str(e).lower():
@@ -1246,11 +1419,15 @@ def run_jobs_batch(
 
     if not ran_parallel:
         for spec in job_specs:
+            if _is_cancelled():
+                cancelled = True
+                errors.append("用户已停止生图")
+                break
             if stagger > 0 and use_threads:
                 time.sleep(stagger)
             try:
                 payload = _run_one_batch_job(
-                    orig_pk, spec, user_notes, ref_cache, common_by_key
+                    orig_pk, spec, user_notes, ref_cache, common_by_key, progress_job_id
                 )
                 _collect_payload(spec, payload)
             except Exception as e:
@@ -1258,12 +1435,29 @@ def run_jobs_batch(
 
     orig.refresh_from_db(fields=["finished_images"])
     struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
+    processed = len(results)
+    added_final = added_total
+    if progress_job_id:
+        try:
+            from .ai_image_payload import count_successful_finished_images
+            from .image_gen_jobs import clear_job_cancel, get_job
+
+            job = get_job(progress_job_id) or {}
+            baseline = int(job.get("baseline_success_count") or 0)
+            delta = max(0, count_successful_finished_images(struct) - baseline)
+            added_final = max(added_total, delta)
+            if cancelled:
+                clear_job_cancel(progress_job_id)
+        except Exception as exc:
+            logger.debug("job final progress skipped: %s", exc)
     return {
-        "added": added_total,
+        "added": added_final,
+        "processed": processed,
         "results": results,
         "errors": errors[:20],
         "finished_images": _display_finished_images_struct(struct),
         "finished_images_all": struct,
+        "cancelled": cancelled,
     }
 
 
@@ -1280,22 +1474,13 @@ def collect_append_generation_jobs(
     orig.refresh_from_db(fields=["finished_images"])
     struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
     jobs: list[GenerationJob] = []
-    ref_cache = _GenerationRefCache(orig)
     for mod in plan:
         module_key = mod["key"]
         section, module = _module_by_key(orig, module_key)
         title = module.get("title") or "模块"
-        _title, common = _module_generation_common(
-            orig,
-            section=section,
-            module=module,
-            module_key=module_key,
-            user_notes=user_notes,
-            ref_cache=ref_cache,
-        )
         start = _next_variant_index(struct, section, module_key, title)
         for i in range(target):
-            jobs.append((module_key, section, module, common, start + i))
+            jobs.append((module_key, section, module, {}, start + i))
     return jobs
 
 
@@ -1304,47 +1489,57 @@ def collect_missing_generation_jobs(
     plan: list[dict[str, Any]],
     user_notes: str = "",
 ) -> list[GenerationJob]:
-    """兼容旧逻辑：仅补未满槽位（topup 等场景）。"""
-    from .ai_image_need_service import _normalize_original_images_struct
-
-    target = max(1, _IMAGES_PER_MODULE)
-    _cap_finished_images_struct(orig, plan, target=target, limit_per_module=True)
-    orig.refresh_from_db(fields=["finished_images"])
-    struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
-    jobs: list[GenerationJob] = []
-    ref_cache = _GenerationRefCache(orig)
-    for mod in plan:
-        module_key = mod["key"]
-        section, module = _module_by_key(orig, module_key)
-        title = module.get("title") or "模块"
-        _title, common = _module_generation_common(
-            orig,
-            section=section,
-            module=module,
-            module_key=module_key,
-            user_notes=user_notes,
-            ref_cache=ref_cache,
-        )
-        for v in range(target):
-            if _module_has_variant(struct, section, module_key, v, module_title=title):
-                continue
-            jobs.append((module_key, section, module, common, v))
-    return jobs
-
-
-def compute_generation_estimate(
-    orig: OriginalAsinData,
-    plan: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """统计计划生图张数（含已有张数与待补张数）。"""
+    """仅补未满槽位；不构建 prompt/参考图（执行阶段由 run_jobs_batch 再生成）。"""
     from .ai_image_need_service import _normalize_original_images_struct
 
     target = max(1, _IMAGES_PER_MODULE)
     _cap_finished_images_struct(orig, plan, limit_per_module=False)
     orig.refresh_from_db(fields=["finished_images"])
     struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
+    jobs: list[GenerationJob] = []
+    for mod in plan:
+        module_key = mod["key"]
+        section, module = _module_by_key(orig, module_key)
+        title = module.get("title") or "模块"
+        for v in range(target):
+            if _module_has_variant(struct, section, module_key, v, module_title=title):
+                continue
+            jobs.append((module_key, section, module, {}, v))
+    return jobs
+
+
+def _count_missing_variant_slots(
+    orig: OriginalAsinData,
+    plan: list[dict[str, Any]],
+    struct: dict[str, list[dict[str, str]]],
+    *,
+    target: Optional[int] = None,
+) -> int:
+    """统计各模块 variant 0..target-1 中尚未占用的槽位数。"""
+    cap = max(1, target if target is not None else _IMAGES_PER_MODULE)
+    missing = 0
+    for mod in plan:
+        section, module = _module_by_key(orig, mod["key"])
+        title = module.get("title") or "模块"
+        mk = mod["key"]
+        for v in range(cap):
+            if not _module_has_variant(struct, section, mk, v, module_title=title):
+                missing += 1
+    return missing
+
+
+def compute_generation_estimate(
+    orig: OriginalAsinData,
+    plan: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """统计计划生图张数（含已有张数、总待补张数、本次单次上限内可生成张数）。"""
+    from .ai_image_need_service import _normalize_original_images_struct
+
+    target = max(1, _IMAGES_PER_MODULE)
+    per_run_cap = _max_images_per_run()
+    struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
     module_count = len(plan)
-    missing = module_count * target
+    missing = _count_missing_variant_slots(orig, plan, struct, target=target)
     complete_modules = 0
     main_have = len(struct.get("main") or [])
     aplus_have = len(struct.get("aplus") or [])
@@ -1355,13 +1550,17 @@ def compute_generation_estimate(
         ok_n = _count_module_images(struct, section, title, module_key=mk, successful_only=True)
         if ok_n >= target:
             complete_modules += 1
-    total_waves = (missing + _MODULE_WORKERS - 1) // _MODULE_WORKERS if missing > 0 else 0
+    this_run = min(missing, per_run_cap)
+    total_waves = (this_run + _MODULE_WORKERS - 1) // _MODULE_WORKERS if this_run > 0 else 0
     return {
         "images_per_module": target,
         "module_count": module_count,
         "target_total": module_count * target,
         "missing_to_generate": missing,
-        "append_per_run": missing,
+        "this_run_to_generate": this_run,
+        "append_per_run": this_run,
+        "max_per_run": per_run_cap,
+        "has_more_after_run": missing > this_run,
         "already_have_main": main_have,
         "already_have_aplus": aplus_have,
         "complete_modules": complete_modules,
@@ -1456,8 +1655,10 @@ def run_generation_wave(
 
     plan = build_generation_plan(orig)
     estimate = compute_generation_estimate(orig, plan)
-    jobs = collect_missing_generation_jobs(orig, plan, user_notes=user_notes)
-    total_waves = generation_wave_count(orig, plan, user_notes=user_notes)
+    jobs = _limit_jobs_per_run(
+        collect_missing_generation_jobs(orig, plan, user_notes=user_notes)
+    )
+    total_waves = (len(jobs) + _MODULE_WORKERS - 1) // _MODULE_WORKERS if jobs else 0
     if wave_index >= total_waves or not jobs:
         struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
         still: list[str] = []
@@ -1500,21 +1701,24 @@ def run_all_modules_generation(
     orig: OriginalAsinData,
     user_notes: str = "",
 ) -> dict[str, Any]:
-    """按待生成张数分波并行生图，每波最多 _MODULE_WORKERS 路 API。"""
+    """单次请求：仅补未满槽位，且最多 _MAX_IMAGES_PER_RUN 张（不含已有成品图）。"""
     plan = build_generation_plan(orig)
-    total_waves = generation_wave_count(orig, plan, user_notes=user_notes)
-    module_results: list[dict[str, Any]] = []
-    incomplete: list[str] = []
-    struct: dict[str, list[dict[str, str]]] = {"main": [], "aplus": [], "optimized": []}
-    added_total = 0
+    jobs = _limit_jobs_per_run(
+        collect_missing_generation_jobs(orig, plan, user_notes=user_notes)
+    )
+    if not jobs:
+        from .ai_image_need_service import _normalize_original_images_struct
 
-    for wave_index in range(total_waves):
-        payload = run_generation_wave(orig, user_notes, wave_index)
-        added_total += int(payload.get("added") or 0)
-        module_results.extend(payload.get("modules") or [])
-        incomplete = payload.get("incomplete") or incomplete
-        struct = payload.get("finished_images") or struct
-
+        struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
+        return {
+            "modules": [],
+            "incomplete": [],
+            "finished_images": struct,
+            "added": 0,
+        }
+    added_total, module_results, incomplete, struct = _execute_generation_jobs(
+        orig, jobs, user_notes
+    )
     return {
         "modules": module_results,
         "incomplete": incomplete,
@@ -1599,11 +1803,26 @@ def run_one_module_generation(
     section, module = _module_by_key(orig, module_key)
     title = module.get("title") or "模块"
     struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
-    start = _next_variant_index(struct, section, module_key, title)
-    specs: list[dict[str, Any]] = [
-        {"module_key": module_key, "variant_index": start + i, "title": title}
-        for i in range(target)
-    ]
+    specs: list[dict[str, Any]] = []
+    for v in range(target):
+        if _module_has_variant(struct, section, module_key, v, module_title=title):
+            continue
+        specs.append({"module_key": module_key, "variant_index": v, "title": title})
+        if len(specs) >= _max_images_per_run():
+            break
+    if not specs:
+        module_total = _count_module_images(struct, section, title, module_key=module_key)
+        return {
+            "module_key": module_key,
+            "section": section,
+            "title": title,
+            "added": 0,
+            "target": target,
+            "module_total": module_total,
+            "complete": module_total >= target,
+            "errors": [],
+            "finished_images": struct,
+        }
     batch = run_jobs_batch(orig, specs, user_notes=user_notes)
     struct = _batch_finished_images_struct(batch) or struct
     module_total = _count_module_images(struct, section, title, module_key=module_key)
@@ -1650,17 +1869,33 @@ def run_custom_module_generation(
     module_key = _find_or_make_module_key(orig, section, title)
     target = max(1, _IMAGES_PER_MODULE)
     struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
-    start = _next_variant_index(struct, section, module_key, title)
-    specs: list[dict[str, Any]] = [
-        {
+    specs: list[dict[str, Any]] = []
+    for v in range(target):
+        if _module_has_variant(struct, section, module_key, v, module_title=title):
+            continue
+        specs.append(
+            {
+                "module_key": module_key,
+                "variant_index": v,
+                "title": title,
+                "section": section,
+                "inline_module": module,
+            }
+        )
+        if len(specs) >= _max_images_per_run():
+            break
+    if not specs:
+        module_total = _count_module_images(struct, section, title, module_key=module_key)
+        return {
             "module_key": module_key,
-            "variant_index": start + i,
-            "title": title,
             "section": section,
-            "inline_module": module,
+            "title": title,
+            "added": 0,
+            "target": target,
+            "module_total": module_total,
+            "errors": [],
+            "finished_images": struct,
         }
-        for i in range(target)
-    ]
     batch = run_jobs_batch(orig, specs, user_notes=user_notes)
     struct = _batch_finished_images_struct(batch) or struct
     module_total = _count_module_images(struct, section, title, module_key=module_key)
@@ -1772,18 +2007,24 @@ def topup_incomplete_modules(
     *,
     max_rounds: int = 2,
 ) -> dict[str, Any]:
-    """全部模块首轮完成后，补生成未满 target 张的模块（全局最多 _MODULE_WORKERS 并行）。"""
+    """补全未满 target 张的模块；单次 API 请求累计最多 _MAX_IMAGES_PER_RUN 张。"""
     target = max(1, _IMAGES_PER_MODULE)
     plan = build_generation_plan(orig)
     topped_up: list[dict[str, Any]] = []
     cap = min(_TOPUP_MAX_ROUNDS, max(1, max_rounds) * 100)
+    added_budget = _max_images_per_run()
+    added_total = 0
 
     for _ in range(cap):
+        if added_total >= added_budget:
+            break
         payload = topup_one_chunk(orig, user_notes=user_notes)
         topped_up.extend(payload.get("topped_up") or [])
+        chunk_added = int(payload.get("added") or 0)
+        added_total += chunk_added
         if not payload.get("has_more"):
             break
-        if int(payload.get("added") or 0) <= 0:
+        if chunk_added <= 0:
             break
 
     still_incomplete, struct = _list_still_incomplete(orig, plan, target)
@@ -1791,6 +2032,8 @@ def topup_incomplete_modules(
         "topped_up": topped_up,
         "still_incomplete": still_incomplete,
         "finished_images": struct,
+        "added": added_total,
+        "has_more": bool(still_incomplete),
     }
 
 

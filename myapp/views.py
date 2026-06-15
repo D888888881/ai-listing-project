@@ -62,6 +62,18 @@ from .asin_access import (
     user_can_access_asin,
 )
 from .ai_image_need_service import generate_image_need_for_asin
+from .image_gen_jobs import (
+    async_batch_enabled,
+    cancel_job,
+    enqueue_batch_job,
+    get_active_job_for_user,
+    get_job,
+    job_payload_for_poll,
+    reconcile_job_status,
+    retry_job_from_db,
+    start_batch_job_background,
+)
+from .redis_concurrency import get_redis_client
 from .nano_banana_service import (
     build_generation_plan,
     compute_generation_estimate,
@@ -180,6 +192,26 @@ class H10CredentialsForm(forms.Form):
         cleaned["h10_auth_token"] = final_auth
         cleaned["h10_x_token"] = final_x
         return cleaned
+
+
+class NanoApiLimitsForm(forms.Form):
+    """GrsAi 全站/每用户并发限额（超级管理员）。"""
+
+    global_limit = forms.IntegerField(label="全站 API 并发上限", min_value=1, max_value=500)
+    per_user_limit = forms.IntegerField(label="普通用户每用户并发", min_value=1, max_value=50)
+    per_user_superuser_limit = forms.IntegerField(
+        label="管理员每用户并发",
+        min_value=1,
+        max_value=50,
+    )
+
+
+def _style_nano_limits_form(form: forms.Form) -> None:
+    for name in ("global_limit", "per_user_limit", "per_user_superuser_limit"):
+        if name in form.fields:
+            form.fields[name].widget.attrs.update(
+                {"class": "settings-input", "style": "width:100%;max-width:280px;"}
+            )
 
 
 def _mail_configured() -> bool:
@@ -1103,6 +1135,7 @@ def ai_image_gen(request: HttpRequest) -> HttpResponse:
             "pagination_qs": pagination_querystring(request),
             "media_url": media_url,
             "images_per_module": int(getattr(settings, "NANO_BANANA_IMAGES_PER_MODULE", 3)),
+            "max_images_per_run": int(getattr(settings, "NANO_BANANA_MAX_IMAGES_PER_RUN", 48)),
             "parallel_workers": int(getattr(settings, "NANO_BANANA_MODULE_WORKERS", 6)),
             **uploader_filter_context(request.user, request),
         },
@@ -1356,6 +1389,9 @@ def ai_image_generate_plan(request: HttpRequest) -> JsonResponse:
         orig.save(update_fields=["main_image_requirements", "aplus_image_requirements", "updated_at"])
     try:
         modules = build_generation_plan(orig)
+        from .ai_image_need_service import validate_generation_refs_for_plan
+
+        validate_generation_refs_for_plan(orig, modules)
         estimate = compute_generation_estimate(orig, modules)
         pending = pending_jobs_payload(orig, modules)
     except ValueError as e:
@@ -1460,42 +1496,199 @@ def ai_image_run_jobs_batch(request: HttpRequest) -> JsonResponse:
         orig.aplus_image_requirements = aplus_req
     if main_req or aplus_req:
         orig.save(update_fields=["main_image_requirements", "aplus_image_requirements", "updated_at"])
+
+    user_id = int(getattr(request.user, "pk", None) or 0)
+
+    if async_batch_enabled():
+        try:
+            job_id, _task_id, job_snapshot = enqueue_batch_job(
+                user=request.user,
+                orig=orig,
+                job_specs=job_specs,
+                user_notes=user_notes,
+            )
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "async": True,
+                    "job_id": job_id,
+                    "batch_size": len(job_specs),
+                    "asin": orig.asin,
+                    "baseline_success_count": int(
+                        (job_snapshot or {}).get("baseline_success_count") or 0
+                    ),
+                }
+            )
+        except Exception as e:
+            logger.warning("async batch enqueue failed, falling back to sync: %s", e)
+
+    sync_reason = ""
+    if getattr(settings, "NANO_BANANA_ASYNC_BATCH", True) and get_redis_client() is not None:
+        from .image_gen_config import celery_workers_available
+
+        if not celery_workers_available():
+            sync_reason = "生图 Worker 未运行，已在 Web 进程后台执行（请启动 worker 以支持多人并发）"
+
     try:
-        payload = _with_nano_user(
-            request.user,
-            run_jobs_batch,
-            orig,
-            job_specs,
+        job_id, job_snapshot, _task_id = start_batch_job_background(
+            user=request.user,
+            orig=orig,
+            job_specs=job_specs,
             user_notes=user_notes,
         )
     except Exception as e:
-        logger.exception("run_jobs_batch failed asin=%s", asin)
-        err_msg = str(e)
-        if "interpreter shutdown" in err_msg.lower():
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "error": "Django 正在热重载（检测到代码文件变更），请等待服务稳定后重试本批。生图过程中请勿保存 .py 文件。",
-                    "reload": True,
-                },
-                status=503,
-            )
-        return JsonResponse({"ok": False, "error": err_msg}, status=502)
-    media_url = _ai_image_media_url()
-    fin_struct = _payload_finished_images(payload)
-    added = int(payload.get("added") or 0)
-    batch_errors = payload.get("errors") or []
+        logger.exception("start_batch_job_background failed asin=%s", asin)
+        return JsonResponse({"ok": False, "error": str(e)}, status=502)
+
     return JsonResponse(
         {
             "ok": True,
-            "partial": bool(batch_errors) and added >= 0,
-            "asin": orig.asin,
-            "added": added,
-            "errors": batch_errors,
+            "async": True,
+            "job_id": job_id,
             "batch_size": len(job_specs),
-            "finished_images": fin_struct,
+            "asin": orig.asin,
+            "baseline_success_count": int(
+                (job_snapshot or {}).get("baseline_success_count") or 0
+            ),
+            "sync_reason": sync_reason,
+        }
+    )
+
+
+@login_required
+@require_GET
+def ai_image_run_jobs_batch_status(request: HttpRequest) -> JsonResponse:
+    """轮询异步批量生图任务状态。"""
+    job_id = (request.GET.get("job_id") or "").strip()
+    if not job_id:
+        return JsonResponse({"ok": False, "error": "缺少 job_id。"}, status=400)
+    job = job_payload_for_poll(job_id)
+    if not job:
+        job = reconcile_job_status(job_id)
+    if not job:
+        return JsonResponse({"ok": False, "error": "任务不存在或已过期。"}, status=404)
+    uid = int(getattr(request.user, "pk", None) or 0)
+    if int(job.get("user_id") or 0) != uid:
+        return JsonResponse({"ok": False, "error": "无权查看该任务。"}, status=403)
+    status = job.get("status") or "pending"
+    if status in ("completed", "failed", "dead", "cancelled"):
+        return JsonResponse(
+            {
+                "ok": job.get("ok", status in ("completed", "cancelled")),
+                "async": True,
+                "job_id": job_id,
+                "status": status,
+                "added": int(job.get("added") or 0),
+                "processed": int(job.get("processed") or job.get("added") or 0),
+                "errors": job.get("errors") or [],
+                "error": job.get("error") or "",
+                "batch_size": int(job.get("batch_size") or 0),
+                "asin": job.get("asin") or "",
+                "finished_images": job.get("finished_images"),
+                "finished_images_all": job.get("finished_images_all") or job.get("finished_images"),
+                "data": job.get("data"),
+                "partial": bool(job.get("errors") or status == "cancelled")
+                and int(job.get("added") or 0) >= 0,
+                "cancelled": status == "cancelled",
+                "baseline_success_count": int(job.get("baseline_success_count") or 0),
+            }
+        )
+    return JsonResponse(
+        {
+            "ok": True,
+            "async": True,
+            "job_id": job_id,
+            "status": status,
+            "added": int(job.get("added") or 0),
+            "processed": int(job.get("processed") or job.get("added") or 0),
+            "batch_size": int(job.get("batch_size") or 0),
+            "asin": job.get("asin") or "",
+            "errors": job.get("errors") or [],
+            "finished_images": job.get("finished_images"),
+            "finished_images_all": job.get("finished_images_all") or job.get("finished_images"),
+            "data": job.get("data"),
+            "baseline_success_count": int(job.get("baseline_success_count") or 0),
+        }
+    )
+
+
+@login_required
+@require_GET
+def ai_image_run_jobs_batch_active(request: HttpRequest) -> JsonResponse:
+    """当前用户进行中的批量生图任务（页面刷新后恢复轮询）。"""
+    uid = int(getattr(request.user, "pk", None) or 0)
+    job = get_active_job_for_user(uid)
+    if job:
+        job = job_payload_for_poll(job.get("job_id") or "") or job
+    if not job or job.get("status") not in ("pending", "running"):
+        return JsonResponse({"ok": True, "active": False})
+    return JsonResponse(
+        {
+            "ok": True,
+            "active": True,
+            "job_id": job.get("job_id") or "",
+            "status": job.get("status") or "pending",
+            "added": int(job.get("added") or 0),
+            "processed": int(job.get("processed") or job.get("added") or 0),
+            "batch_size": int(job.get("batch_size") or 0),
+            "asin": job.get("asin") or "",
+            "finished_images": job.get("finished_images"),
+            "finished_images_all": job.get("finished_images_all") or job.get("finished_images"),
+            "data": job.get("data"),
+            "errors": job.get("errors") or [],
+            "baseline_success_count": int(job.get("baseline_success_count") or 0),
+        }
+    )
+
+
+@login_required
+@require_POST
+def ai_image_run_jobs_batch_cancel(request: HttpRequest) -> JsonResponse:
+    """用户主动停止进行中的批量生图任务。"""
+    job_id = (request.POST.get("job_id") or "").strip()
+    if not job_id:
+        return JsonResponse({"ok": False, "error": "缺少 job_id。"}, status=400)
+    uid = int(getattr(request.user, "pk", None) or 0)
+    result = cancel_job(job_id, user_id=uid)
+    if not result.get("ok"):
+        return JsonResponse(result, status=403 if "无权" in (result.get("error") or "") else 404)
+    return JsonResponse(result)
+
+
+@login_required
+@require_GET
+def ai_image_finished_snapshot(request: HttpRequest) -> JsonResponse:
+    """从数据库读取 ASIN 最新成品图（轮询时刷新表格用）。"""
+    asin = (request.POST.get("asin") or request.GET.get("asin") or "").strip()
+    if not asin:
+        return JsonResponse({"ok": False, "error": "缺少 ASIN。"}, status=400)
+    if not user_can_access_asin(request.user, asin):
+        return JsonResponse({"ok": False, "error": f"无权查看 ASIN：{asin}"}, status=403)
+    orig = OriginalAsinData.objects.filter(asin__iexact=asin).first()
+    if not orig:
+        return JsonResponse({"ok": False, "error": "ASIN 不存在。"}, status=404)
+    from .ai_image_payload import (
+        ai_image_media_url,
+        count_generating_finished_images,
+        count_successful_finished_images,
+        original_images_row_payload,
+    )
+    from .nano_banana_service import _display_finished_images_struct
+
+    fin_struct = _normalize_original_images_struct(getattr(orig, "finished_images", None))
+    display = _display_finished_images_struct(fin_struct)
+    media_url = _ai_image_media_url()
+    total_success = count_successful_finished_images(fin_struct)
+    generating_count = count_generating_finished_images(fin_struct)
+    return JsonResponse(
+        {
+            "ok": True,
+            "asin": orig.asin,
+            "finished_images": display,
             "finished_images_all": fin_struct,
-            "data": _original_images_row_payload(fin_struct, media_url),
+            "data": original_images_row_payload(display, media_url),
+            "total_success": total_success,
+            "generating_count": generating_count,
         }
     )
 
@@ -1598,7 +1791,7 @@ def ai_image_topup_chunk(request: HttpRequest) -> JsonResponse:
 @login_required
 @require_POST
 def ai_image_generate_all(request: HttpRequest) -> JsonResponse:
-    """按 ASIN 批量生图：每模块 3 张，全局最多 6 个 API 并行（可跨模块）。"""
+    """按 ASIN 批量生图：仅补未满槽位，单次最多 NANO_BANANA_MAX_IMAGES_PER_RUN 张。"""
     asin = (request.POST.get("asin") or "").strip()
     user_notes = (request.POST.get("user_notes") or "").strip()
     main_req = (request.POST.get("main_image_requirements") or "").strip()
@@ -1619,12 +1812,10 @@ def ai_image_generate_all(request: HttpRequest) -> JsonResponse:
     try:
         with nano_banana_user_scope(getattr(request.user, "pk", None)):
             payload = run_all_modules_generation(orig, user_notes=user_notes)
-            topup = topup_incomplete_modules(orig, user_notes=user_notes)
     except Exception as e:
         return JsonResponse({"ok": False, "error": str(e)}, status=502)
     media_url = _ai_image_media_url()
-    fin_struct = _normalize_original_images_struct(topup.get("finished_images") or payload.get("finished_images"))
-    still = topup.get("still_incomplete") or []
+    fin_struct = _normalize_original_images_struct(payload.get("finished_images"))
     incomplete = payload.get("incomplete") or []
     return JsonResponse(
         {
@@ -1632,9 +1823,8 @@ def ai_image_generate_all(request: HttpRequest) -> JsonResponse:
             "asin": orig.asin,
             "modules": payload.get("modules") or [],
             "incomplete": incomplete,
-            "topped_up": topup.get("topped_up") or [],
-            "still_incomplete": still,
-            "all_complete": len(still) == 0 and len(incomplete) == 0,
+            "added": payload.get("added") or 0,
+            "all_complete": len(incomplete) == 0,
             "data": _original_images_row_payload(fin_struct, media_url),
             "finished_images": fin_struct,
         }
@@ -3151,10 +3341,11 @@ def password_reset_confirm_view(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def account_settings(request: HttpRequest) -> HttpResponse:
-    """账户设置：邮箱、登录密码；超级管理员可配置 Helium10 凭证。"""
+    """账户设置：邮箱、登录密码；超级管理员可配置 Helium10 凭证与生图并发限额。"""
     from .h10_config import h10_credentials_status, set_h10_credentials
+    from .image_gen_config import api_limits_status, set_api_limits
 
-    def _render(email_form, password_form, h10_form=None):
+    def _render(email_form, password_form, h10_form=None, nano_form=None):
         ctx = {"email_form": email_form, "password_form": password_form}
         if request.user.is_superuser:
             if h10_form is None:
@@ -3162,10 +3353,45 @@ def account_settings(request: HttpRequest) -> HttpResponse:
             _style_h10_credentials_form(h10_form)
             ctx["h10_form"] = h10_form
             ctx["h10_status"] = h10_credentials_status()
+            if nano_form is None:
+                lim = api_limits_status()
+                nano_form = NanoApiLimitsForm(
+                    initial={
+                        "global_limit": lim["global"],
+                        "per_user_limit": lim["per_user"],
+                        "per_user_superuser_limit": lim["per_user_superuser"],
+                    }
+                )
+            _style_nano_limits_form(nano_form)
+            ctx["nano_form"] = nano_form
+            ctx["nano_limits_status"] = api_limits_status()
         return render(request, "account_settings.html", ctx)
 
     if request.method == "POST":
         action = (request.POST.get("form_action") or "").strip()
+
+        if action == "nano_limits":
+            if not request.user.is_superuser:
+                messages.error(request, "无权修改生图并发限额。")
+                return redirect(reverse("account_settings"))
+            email_form = EmailUpdateForm(request.user)
+            password_form = PasswordChangeForm(request.user)
+            h10_form = H10CredentialsForm()
+            nano_form = NanoApiLimitsForm(request.POST)
+            _style_email_update_form(email_form)
+            _style_password_change_form(password_form)
+            _style_h10_credentials_form(h10_form)
+            _style_nano_limits_form(nano_form)
+            if nano_form.is_valid():
+                set_api_limits(
+                    global_limit=nano_form.cleaned_data["global_limit"],
+                    per_user=nano_form.cleaned_data["per_user_limit"],
+                    per_user_superuser=nano_form.cleaned_data["per_user_superuser_limit"],
+                    user=request.user,
+                )
+                messages.success(request, "生图并发限额已保存（立即生效，无需重启）。")
+                return redirect(reverse("account_settings"))
+            return _render(email_form, password_form, h10_form, nano_form)
 
         if action == "h10":
             if not request.user.is_superuser:
@@ -3473,3 +3699,56 @@ def gpt_analysis(request: HttpRequest) -> HttpResponse:
             **uploader_filter_context(request.user, request),
         },
     )
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+def image_gen_ops(request: HttpRequest) -> HttpResponse:
+    """生图运维：任务列表、指标、DLQ 重试。"""
+    from .image_gen_config import api_limits_status
+    from .image_gen_metrics import metrics_snapshot
+    from .models import ImageGenJob
+
+    status_filter = (request.GET.get("status") or "").strip()
+    qs = ImageGenJob.objects.select_related("user").order_by("-created_at")
+    if status_filter in dict(ImageGenJob.STATUS_CHOICES):
+        qs = qs.filter(status=status_filter)
+    page_obj = paginate(request, qs)
+    return render(
+        request,
+        "image_gen_ops.html",
+        {
+            "page_obj": page_obj,
+            "jobs": page_obj.object_list,
+            "status_filter": status_filter,
+            "status_choices": ImageGenJob.STATUS_CHOICES,
+            "metrics": metrics_snapshot(),
+            "limits": api_limits_status(),
+            "pagination_qs": pagination_querystring(request),
+        },
+    )
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+@require_GET
+def image_gen_ops_metrics_json(request: HttpRequest) -> JsonResponse:
+    from .image_gen_metrics import metrics_snapshot
+
+    return JsonResponse({"ok": True, "metrics": metrics_snapshot()})
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+@require_POST
+def image_gen_job_retry(request: HttpRequest) -> HttpResponse:
+    job_id = (request.POST.get("job_id") or "").strip()
+    if not job_id:
+        messages.error(request, "缺少任务 ID。")
+        return redirect(reverse("image_gen_ops"))
+    try:
+        new_id = retry_job_from_db(job_id, operator=request.user)
+        messages.success(request, f"已重新入队，新任务 ID：{new_id[:12]}…")
+    except ValueError as e:
+        messages.error(request, str(e))
+    return redirect(reverse("image_gen_ops"))

@@ -2,7 +2,8 @@
  * 全站 AI 批量生图进度浮窗（按登录用户隔离，可手动关闭）
  */
 (function (global) {
-  var STORAGE_VERSION = 'v3';
+  var STORAGE_VERSION = 'v4';
+  var onStopHandler = null;
   var STALE_MS = 2 * 60 * 60 * 1000;
 
   function currentUserId() {
@@ -80,6 +81,7 @@
       '<div class="ai-gen-progress-head">' +
       '<strong class="ai-gen-progress-title">AI 批量生图</strong>' +
       '<div class="ai-gen-progress-actions">' +
+      '<button type="button" class="ai-gen-progress-btn ai-gen-progress-btn-stop" data-action="stop" title="停止生图" style="display:none;">停止生图</button>' +
       '<button type="button" class="ai-gen-progress-btn" data-action="toggle" title="收起/展开">收起</button>' +
       '<button type="button" class="ai-gen-progress-btn" data-action="close" title="关闭">关闭</button>' +
       '</div></div>' +
@@ -96,6 +98,11 @@
     });
     panel.querySelector('[data-action="close"]').addEventListener('click', function () {
       clearState();
+    });
+    panel.querySelector('[data-action="stop"]').addEventListener('click', function () {
+      if (typeof onStopHandler === 'function') {
+        onStopHandler();
+      }
     });
     return panel;
   }
@@ -114,6 +121,9 @@
     var toggleBtn = panel.querySelector('[data-action="toggle"]');
     if (toggleBtn) toggleBtn.textContent = st.collapsed ? '展开' : '收起';
 
+    var stopBtn = panel.querySelector('[data-action="stop"]');
+    if (stopBtn) stopBtn.style.display = st.active && !st.finished ? '' : 'none';
+
     var total = Math.max(0, parseInt(st.totalExpected, 10) || 0);
     var done = Math.max(0, parseInt(st.completed, 10) || 0);
     if (total > 0 && done > total) done = total;
@@ -125,7 +135,7 @@
 
     if (summaryEl) {
       summaryEl.textContent =
-        '预计生成 ' + total + ' 张 · 已完成 ' + done + ' 张（' + pct + '%）' +
+        '本次计划 ' + total + ' 张 · 已生成 ' + done + ' 张（' + pct + '%）' +
         ' · 并行 ' + (st.parallelWorkers || 6) + ' 路';
     }
     if (detailEl) {
@@ -185,19 +195,25 @@
     },
     finish: function (message) {
       var st = readState() || defaultState();
+      var total = parseInt(st.totalExpected, 10) || 0;
+      var done = parseInt(st.completed, 10) || 0;
       st.active = false;
       st.finished = true;
       st.collapsed = false;
-      st.detail = message || '任务已完成';
-      var total = parseInt(st.totalExpected, 10) || 0;
-      if (total > 0 && (parseInt(st.completed, 10) || 0) < total) {
-        st.detail = (message || '任务结束') + '（部分图片可能因超时未生成，可再次批量生图补全）';
+      if (message) {
+        st.detail = message;
+      } else if (total > 0 && done >= total) {
+        st.detail = '本次已生成 ' + done + ' / ' + total + ' 张';
+      } else if (total > 0 && done < total) {
+        st.detail = '本次已生成 ' + done + ' / ' + total + ' 张（部分可能失败或超时，可再次点击继续）';
+      } else {
+        st.detail = '任务已完成';
       }
       st.updatedAt = Date.now();
       writeState(st);
       setTimeout(function () {
         clearState();
-      }, 10000);
+      }, 12000);
     },
     fail: function (message) {
       var st = readState() || defaultState();
@@ -219,6 +235,9 @@
     isActive: function () {
       var st = readState();
       return !!(st && st.active);
+    },
+    setStopHandler: function (fn) {
+      onStopHandler = typeof fn === 'function' ? fn : null;
     },
     render: render
   };

@@ -324,6 +324,44 @@
         </div>
       </form>
     </section>
+
+    <section class="settings-panel admin-only" aria-labelledby="panel-nano-title" style="margin-top:20px;">
+      <div class="panel-top">
+        <div class="panel-icon sec" aria-hidden="true">AI</div>
+        <div>
+          <h2 class="panel-title" id="panel-nano-title">生图并发限额</h2>
+          <p class="panel-meta">全站 GrsAi API 并发与每用户槽位。保存后立即生效（建议全站 ≤ GrsAi 账号上限的 80%）。</p>
+        </div>
+      </div>
+      {% if nano_limits_status.from_db.global %}
+        <div class="h10-status ok">当前限额来自数据库配置（覆盖 .env 默认值）。</div>
+      {% else %}
+        <div class="h10-status warn">当前使用 .env 默认限额；保存后将写入数据库。</div>
+      {% endif %}
+      <form method="post" action="{% url 'account_settings' %}">
+        {% csrf_token %}
+        <input type="hidden" name="form_action" value="nano_limits">
+        {% if nano_form.non_field_errors %}<div class="form-errors">{{ nano_form.non_field_errors }}</div>{% endif %}
+        <div class="settings-field">
+          <label for="id_global_limit">{{ nano_form.global_limit.label }}</label>
+          {{ nano_form.global_limit }}
+        </div>
+        <div class="settings-field">
+          <label for="id_per_user_limit">{{ nano_form.per_user_limit.label }}</label>
+          {{ nano_form.per_user_limit }}
+        </div>
+        <div class="settings-field">
+          <label for="id_per_user_superuser_limit">{{ nano_form.per_user_superuser_limit.label }}</label>
+          {{ nano_form.per_user_superuser_limit }}
+        </div>
+        <div class="panel-actions">
+          <button type="submit" class="btn-settings-primary">保存生图限额</button>
+          {% if request.user.is_staff %}
+            <a href="{% url 'image_gen_ops' %}" style="margin-left:12px;color:#004eeB;">打开生图运维页 →</a>
+          {% endif %}
+        </div>
+      </form>
+    </section>
   </div>
   {% endif %}
 </div>

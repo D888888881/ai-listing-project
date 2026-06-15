@@ -231,16 +231,18 @@ NANO_BANANA_API_URL = os.environ.get("NANO_BANANA_API_URL", "https://grsai.dakka
 NANO_BANANA_API_KEY = os.environ.get("NANO_BANANA_API_KEY", "")
 # 每个图需模块生成张数（如主图、副图1 各 3 张）
 NANO_BANANA_IMAGES_PER_MODULE = int(os.environ.get("NANO_BANANA_IMAGES_PER_MODULE", "3"))
+# 单次点击「批量生图」最多新生成张数（不含已有成品图；从 0 开始也受此限）
+NANO_BANANA_MAX_IMAGES_PER_RUN = int(os.environ.get("NANO_BANANA_MAX_IMAGES_PER_RUN", "48"))
 # 全局并行 API 数（可同时跑 2 个模块 × 每模块 3 张 = 6）
 NANO_BANANA_MODULE_WORKERS = int(os.environ.get("NANO_BANANA_MODULE_WORKERS", "6"))
 # 每位用户独立的 GrsAi 并行路数（默认 6，与每批 MODULE_WORKERS 一致）
 NANO_BANANA_API_SEMAPHORE_PER_USER = int(os.environ.get("NANO_BANANA_API_SEMAPHORE_PER_USER", "6"))
-# 全站 GrsAi 并行上限，槽位满后排队（建议 PER_USER × 同时在线生图用户数）
-NANO_BANANA_API_SEMAPHORE_GLOBAL = int(os.environ.get("NANO_BANANA_API_SEMAPHORE_GLOBAL", "24"))
+# 全站 GrsAi 并行上限（Redis 启用时为真实全站；10 用户 × 6 路 = 60）
+NANO_BANANA_API_SEMAPHORE_GLOBAL = int(os.environ.get("NANO_BANANA_API_SEMAPHORE_GLOBAL", "60"))
 # 兼容旧名：等同每用户并行路数
 NANO_BANANA_API_SEMAPHORE = int(os.environ.get("NANO_BANANA_API_SEMAPHORE", "6"))
 NANO_BANANA_HTTP_RETRIES = int(os.environ.get("NANO_BANANA_HTTP_RETRIES", "1"))
-NANO_BANANA_BATCH_STAGGER_SEC = float(os.environ.get("NANO_BANANA_BATCH_STAGGER_SEC", "0"))
+NANO_BANANA_BATCH_STAGGER_SEC = float(os.environ.get("NANO_BANANA_BATCH_STAGGER_SEC", "0.3"))
 # 失败后不补全、不重试占满槽位
 NANO_BANANA_ENABLE_TOPUP = os.environ.get("NANO_BANANA_ENABLE_TOPUP", "false").lower() in (
     "1",
@@ -263,8 +265,7 @@ NANO_BANANA_PARALLEL_VARIANTS = os.environ.get("NANO_BANANA_PARALLEL_VARIANTS", 
     "true",
     "yes",
 )
-# 产品原生图：优先 media 公网 URL；未配置时本地图用 base64（带进程内缓存）
-# 主图-副图 / A+ 场景图仅使用 https Listing URL，不受此项影响
+# 生图参考图：true=优先公网/media URL；false=本地与本地上传图用 base64（内网/无公网服务器推荐 false）
 NANO_BANANA_PREFER_URL_REFS = os.environ.get("NANO_BANANA_PREFER_URL_REFS", "false").lower() in (
     "1",
     "true",
@@ -276,6 +277,71 @@ SITE_BASE_URL = os.environ.get("SITE_BASE_URL", "").strip()
 NANO_BANANA_NATIVE_MAX_REFS = int(os.environ.get("NANO_BANANA_NATIVE_MAX_REFS", "2"))
 NANO_BANANA_SCENE_MAX_REFS = int(os.environ.get("NANO_BANANA_SCENE_MAX_REFS", "4"))
 NANO_BANANA_TOPUP_MAX_ROUNDS = int(os.environ.get("NANO_BANANA_TOPUP_MAX_ROUNDS", "30"))
+
+# ---------- Redis / Celery（10 用户 × 6 路并发生图） ----------
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0").strip()
+# redis-py 5 默认 RESP3(HELLO)；Redis<6 或部分兼容服务请保持 2
+REDIS_PROTOCOL = int(os.environ.get("REDIS_PROTOCOL", "2"))
+NANO_BANANA_USE_REDIS_SEMAPHORE = os.environ.get("NANO_BANANA_USE_REDIS_SEMAPHORE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NANO_BANANA_ASYNC_BATCH = os.environ.get("NANO_BANANA_ASYNC_BATCH", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+NANO_BANANA_SEMAPHORE_ACQUIRE_TIMEOUT = float(os.environ.get("NANO_BANANA_SEMAPHORE_ACQUIRE_TIMEOUT", "120"))
+
+CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", REDIS_URL)
+CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", REDIS_URL)
+CELERY_TASK_ALWAYS_EAGER = os.environ.get("CELERY_TASK_ALWAYS_EAGER", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+CELERY_TASK_TRACK_STARTED = True
+# 进度由 ImageGenJob 自管；关闭 Celery result backend 写入，避免 apply_async 触发 Redis HELLO
+CELERY_TASK_IGNORE_RESULT = os.environ.get("CELERY_TASK_IGNORE_RESULT", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+CELERY_TASK_TIME_LIMIT = int(os.environ.get("CELERY_TASK_TIME_LIMIT", "1500"))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "1400"))
+CELERY_WORKER_CONCURRENCY = int(os.environ.get("CELERY_WORKER_CONCURRENCY", "10"))
+CELERY_IMAGE_GEN_QUEUE = os.environ.get("CELERY_IMAGE_GEN_QUEUE", "image_gen")
+CELERY_IMAGE_GEN_QUEUE_HIGH = os.environ.get("CELERY_IMAGE_GEN_QUEUE_HIGH", "image_gen_high")
+CELERY_IMAGE_GEN_QUEUE_DLQ = os.environ.get("CELERY_IMAGE_GEN_QUEUE_DLQ", "image_gen_dlq")
+IMAGE_GEN_JOB_STALE_SEC = int(os.environ.get("IMAGE_GEN_JOB_STALE_SEC", "600"))
+IMAGE_GEN_PENDING_TIMEOUT_SEC = int(os.environ.get("IMAGE_GEN_PENDING_TIMEOUT_SEC", "45"))
+IMAGE_GEN_CANCEL_TERMINATE = os.environ.get("IMAGE_GEN_CANCEL_TERMINATE", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+CELERY_WORKER_QUEUES = os.environ.get(
+    "CELERY_WORKER_QUEUES",
+    f"{CELERY_IMAGE_GEN_QUEUE_HIGH},{CELERY_IMAGE_GEN_QUEUE}",
+)
+NANO_BANANA_API_SEMAPHORE_PER_USER_SUPERUSER = int(
+    os.environ.get("NANO_BANANA_API_SEMAPHORE_PER_USER_SUPERUSER", "8")
+)
+CELERY_TASK_ROUTES = {
+    "myapp.run_jobs_batch_async": {"queue": CELERY_IMAGE_GEN_QUEUE},
+}
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# redis-py 5 默认 RESP3(HELLO)；与 REDIS_PROTOCOL=2 保持一致，避免 Celery inspect / broker 报错
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "protocol": REDIS_PROTOCOL,
+    "visibility_timeout": 43200,
+    "health_check_interval": 30,
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    "protocol": REDIS_PROTOCOL,
+    "health_check_interval": 30,
+}
 
 # Amazon 商品图 webhook（AI 生图页「获取图片」）
 AMAZON_IMAGE_WEBHOOK_URL = os.environ.get("AMAZON_IMAGE_WEBHOOK_URL", "")

@@ -40,6 +40,45 @@ print(f"MySQL not ready after timeout: {last_err}", file=sys.stderr)
 sys.exit(1)
 PY
 
+if [ -n "${REDIS_URL:-}" ]; then
+  echo "Waiting for Redis ..."
+  python <<'PY'
+import os
+import sys
+import time
+
+url = os.environ.get("REDIS_URL", "").strip()
+if not url:
+    sys.exit(0)
+
+try:
+    import redis
+except ImportError:
+    print("redis package missing, skip Redis wait", file=sys.stderr)
+    sys.exit(0)
+
+deadline = time.time() + int(os.environ.get("REDIS_WAIT_TIMEOUT", "60"))
+last_err = None
+while time.time() < deadline:
+    try:
+        client = redis.Redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            protocol=int(os.environ.get("REDIS_PROTOCOL", "2")),
+        )
+        client.ping()
+        print("Redis is ready.")
+        sys.exit(0)
+    except Exception as exc:
+        last_err = exc
+        time.sleep(2)
+
+print(f"Redis not ready after timeout: {last_err}", file=sys.stderr)
+sys.exit(1)
+PY
+fi
+
 echo "Running migrations ..."
 python manage.py migrate --noinput
 

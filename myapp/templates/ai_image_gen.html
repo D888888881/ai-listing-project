@@ -258,6 +258,7 @@
         font-size: 0.88rem;
     }
     .btn-dock-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-dock-submit.is-loading { cursor: wait; opacity: 0.85; }
     .ai-gen-mode {
         display: flex;
         align-items: center;
@@ -313,6 +314,18 @@
         font-size: 0.88rem;
     }
     .btn-dock-submit-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-dock-stop {
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid #fecdca;
+        background: #fef3f2;
+        color: #b42318;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+    .btn-dock-stop:hover { background: #fee4e2; }
+    .btn-dock-stop:disabled { opacity: 0.45; cursor: not-allowed; }
     .ai-hidden-forms {
         position: absolute;
         width: 1px;
@@ -969,6 +982,7 @@
         <div class="ai-img-dock-actions">
             <button type="button" class="btn-dock-view-need" id="btn-dock-view-need">查看选中图需</button>
             <button type="button" class="btn-dock-submit" id="dock-submit-btn">批量开始生图</button>
+            <button type="button" class="btn-dock-stop" id="dock-stop-btn" style="display:none;">停止生图</button>
             <button type="button" class="btn-dock-submit-secondary" id="dock-single-submit-btn" style="display:none;">单模块生图</button>
         </div>
     </div>
@@ -984,12 +998,20 @@
     var UPLOAD_URL = "{% url 'ai_image_upload_original_json' %}";
     var GENERATE_NEED_URL = "{% url 'ai_image_generate_need' %}";
     var IMAGES_PER_MODULE = {{ images_per_module|default:3 }};
+    var MAX_IMAGES_PER_RUN = {{ max_images_per_run|default:48 }};
     var PARALLEL_WORKERS = {{ parallel_workers|default:6 }};
     var GENERATE_ALL_URL = "{% url 'ai_image_generate_all' %}";
     var GENERATE_WAVE_URL = "{% url 'ai_image_generate_wave' %}";
     var RUN_JOB_URL = "{% url 'ai_image_run_generation_job' %}";
     var RUN_JOBS_BATCH_URL = "{% url 'ai_image_run_jobs_batch' %}";
+    var RUN_JOBS_BATCH_STATUS_URL = "{% url 'ai_image_run_jobs_batch_status' %}";
+    var RUN_JOBS_BATCH_ACTIVE_URL = "{% url 'ai_image_run_jobs_batch_active' %}";
+    var RUN_JOBS_BATCH_CANCEL_URL = "{% url 'ai_image_run_jobs_batch_cancel' %}";
+    var FIN_SNAPSHOT_URL = "{% url 'ai_image_finished_snapshot' %}";
+    var BATCH_SESSION_KEY = 'ai_gen_batch_session_v1';
     var FETCH_TIMEOUT_MS = 600000;
+    var BATCH_POLL_INTERVAL_MS = 2500;
+    var BATCH_POLL_MAX_MS = 650000;
     var GENERATE_PLAN_URL = "{% url 'ai_image_generate_plan' %}";
     var GENERATE_MODULE_URL = "{% url 'ai_image_generate_module' %}";
     var RUN_CUSTOM_MODULE_URL = "{% url 'ai_image_run_custom_module' %}";
@@ -1056,16 +1078,32 @@
     dismissPageFlashMessages();
 
     function itemKey(item) {
-        return (item.url || item.path || '').trim();
+        if (!item) return '';
+        var p = (item.url || item.path || item.src || '').trim();
+        if (p) return p;
+        var mk = (item.module_key || item.module || '').trim();
+        var vi = item.variant != null ? item.variant : item.variant_index;
+        if (mk && vi != null) return mk + ':v' + vi;
+        return '';
     }
 
     function itemSrc(item) {
+        if (!item) return '';
+        if (item.src) return item.src;
         if (item.url) return item.url;
         if (!item.path) return '';
         var p = item.path;
         if (p.indexOf('http://') === 0 || p.indexOf('https://') === 0) return p;
         var base = MEDIA_URL.endsWith('/') ? MEDIA_URL : MEDIA_URL + '/';
         return base + p.replace(/^\//, '');
+    }
+
+    function fetchFinSnapshot(asin) {
+        if (!asin) return Promise.resolve(null);
+        var url = FIN_SNAPSHOT_URL + '?asin=' + encodeURIComponent(asin);
+        return fetch(url, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .catch(function () { return null; });
     }
 
     function asinKeyFromTr(tr) {
@@ -1224,11 +1262,11 @@
     /** 从接口响应中解析成品图结构 */
     function extractFinishedImages(payload) {
         if (!payload || typeof payload !== 'object') return null;
-        if (payload.finished_images_all && typeof payload.finished_images_all === 'object') {
-            return payload.finished_images_all;
-        }
         if (payload.finished_images && typeof payload.finished_images === 'object') {
             return payload.finished_images;
+        }
+        if (payload.finished_images_all && typeof payload.finished_images_all === 'object') {
+            return payload.finished_images_all;
         }
         if (payload.data && typeof payload.data === 'object') {
             var d = payload.data;
@@ -1272,7 +1310,7 @@
         return null;
     }
 
-    function updateFinCell(tr, data) {
+    function updateFinCell(tr, data, rowPayload) {
         if (!tr || !data) return;
         setFinJson(tr, data);
         var mainN = (data.main || []).length;
@@ -1287,14 +1325,22 @@
         var preview = tr.querySelector('[data-fin-preview]');
         if (preview) {
             preview.innerHTML = '';
-            var thumbs = (data.main || []).slice(0, 3)
-                .concat((data.aplus || []).slice(0, 2))
-                .concat((data.optimized || []).slice(0, 1));
-            thumbs.forEach(function (item) {
+            var previewItems = [];
+            var rp = rowPayload || {};
+            if (Array.isArray(rp.main_previews) || Array.isArray(rp.aplus_previews)) {
+                previewItems = (rp.main_previews || []).slice(0, 3).concat((rp.aplus_previews || []).slice(0, 2));
+            }
+            if (!previewItems.length) {
+                previewItems = (data.main || []).slice(0, 3)
+                    .concat((data.aplus || []).slice(0, 2))
+                    .concat((data.optimized || []).slice(0, 1));
+            }
+            var bust = Date.now();
+            previewItems.forEach(function (item) {
                 var src = itemSrc(item);
                 if (!src) return;
                 var img = document.createElement('img');
-                img.src = src;
+                img.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + '_t=' + bust;
                 img.alt = '';
                 preview.appendChild(img);
             });
@@ -1366,6 +1412,55 @@
         });
     }
 
+    function pollBatchJob(jobId, onProgress) {
+        var deadline = Date.now() + BATCH_POLL_MAX_MS;
+        function tick() {
+            if (batchGenState.abortPoll) {
+                var aborted = batchGenState.abortPoll;
+                if (typeof onProgress === 'function') {
+                    try { onProgress(aborted); } catch (e) { /* ignore */ }
+                }
+                return Promise.resolve({ httpOk: aborted.ok !== false, data: aborted });
+            }
+            if (Date.now() > deadline) {
+                return Promise.reject(new Error('异步生图任务轮询超时'));
+            }
+            var url = RUN_JOBS_BATCH_STATUS_URL + '?job_id=' + encodeURIComponent(jobId);
+            return fetch(url, { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (batchGenState.abortPoll) {
+                        d = batchGenState.abortPoll;
+                    }
+                    if (!d) {
+                        throw new Error('轮询失败');
+                    }
+                    if (d.error && d.status !== 'pending' && d.status !== 'running') {
+                        throw new Error(d.error);
+                    }
+                    if (d.status === 'pending' || d.status === 'running') {
+                        if (typeof onProgress === 'function') {
+                            try { onProgress(d); } catch (e) { /* ignore */ }
+                        }
+                        var waitMs = batchGenState.stopRequested ? 800 : BATCH_POLL_INTERVAL_MS;
+                        return new Promise(function (resolve) {
+                            setTimeout(function () { resolve(tick()); }, waitMs);
+                        });
+                    }
+                    if (d.status === 'completed' || d.status === 'cancelled' || d.status === 'failed' || d.status === 'dead') {
+                        if (typeof onProgress === 'function') {
+                            try { onProgress(d); } catch (e) { /* ignore */ }
+                        }
+                        return { httpOk: d.ok !== false, data: d };
+                    }
+                    return new Promise(function (resolve) {
+                        setTimeout(function () { resolve(tick()); }, BATCH_POLL_INTERVAL_MS);
+                    });
+                });
+        }
+        return tick();
+    }
+
     /** 逐个 ASIN 执行，完成一个立即更新页面 */
     function runBatchSequential(asins, runOne, options) {
         options = options || {};
@@ -1378,15 +1473,23 @@
 
         function finish() {
             if (btn) btn.disabled = false;
-            var msg = label + '结束：成功 ' + okCount + ' / ' + asins.length;
-            if (errors.length) msg += '；失败 ' + errors.length + ' 个';
-            showToast(msg, okCount === 0);
+            var msg = typeof options.finishMessage === 'function'
+                ? options.finishMessage()
+                : (label + '结束：成功 ' + okCount + ' / ' + asins.length);
+            if (errors.length && typeof options.finishMessage !== 'function') {
+                msg += '；失败 ' + errors.length + ' 个';
+            }
+            showToast(msg, okCount === 0 && errors.length > 0);
             if (options.useProgress && window.AiGenProgress) {
                 AiGenProgress.finish(msg);
             }
         }
 
         function step() {
+            if (batchGenState.stopRequested) {
+                finish();
+                return Promise.resolve();
+            }
             if (idx >= asins.length) {
                 finish();
                 return Promise.resolve();
@@ -2403,14 +2506,37 @@
     function applyFinishedImagesToRow(tr, payload) {
         if (!tr) return;
         var fin = extractFinishedImages(payload);
+        if (!fin && payload && payload.data) {
+            fin = {
+                main: payload.data.main || [],
+                aplus: payload.data.aplus || [],
+                optimized: payload.data.optimized || []
+            };
+        }
         if (!fin) return;
-        var merged = mergeFinishedImages(parseFinData(tr), fin);
-        setFinJson(tr, merged);
-        updateFinCell(tr, merged);
+        var existing = parseFinData(tr);
+        var next = {
+            main: Array.isArray(fin.main) ? fin.main.slice() : [],
+            aplus: Array.isArray(fin.aplus) ? fin.aplus.slice() : [],
+            optimized: (Array.isArray(fin.optimized) && fin.optimized.length)
+                ? fin.optimized.slice()
+                : (existing.optimized || []).slice()
+        };
+        setFinJson(tr, next);
+        updateFinCell(tr, next, payload && payload.data ? payload.data : null);
         if (finModalState.open && finModalState.asin === asinKeyFromTr(tr)) {
-            finModalState.data = merged;
+            finModalState.data = next;
             renderFinModalGrids();
         }
+    }
+
+    function jobProgressAdded(d) {
+        var added = parseInt(d && d.added, 10);
+        var processed = parseInt(d && d.processed, 10);
+        if (!isNaN(processed) && processed > 0) return processed;
+        if (!isNaN(added) && added > 0) return added;
+        if (!isNaN(added) && added >= 0) return added;
+        return 0;
     }
 
     function fetchGenerationPlan(asin, mainTa, aplusTa) {
@@ -2418,8 +2544,11 @@
         planBody.append('asin', asin);
         planBody.append('main_image_requirements', mainTa ? mainTa.value : '');
         planBody.append('aplus_image_requirements', aplusTa ? aplusTa.value : '');
-        return postForm(GENERATE_PLAN_URL, planBody).then(function (res) {
+        return postForm(GENERATE_PLAN_URL, planBody, 120000).then(function (res) {
             var d = res.data || {};
+            if (!res.httpOk && !d.ok) {
+                return { ok: false, error: d.error || ('计划请求失败 HTTP ' + (res.httpOk ? '200' : '')), asin: asin };
+            }
             if (!d.ok) {
                 return { ok: false, error: d.error || '无可用模块', asin: asin };
             }
@@ -2430,6 +2559,9 @@
                 estimate: d.estimate || {},
                 pending_jobs: d.pending_jobs || []
             };
+        }).catch(function (err) {
+            var msg = (err && err.name === 'AbortError') ? '生图计划请求超时' : '生图计划请求失败';
+            return { ok: false, error: msg, asin: asin };
         });
     }
 
@@ -2441,97 +2573,340 @@
         if (window.AiGenProgress) AiGenProgress.addCompleted(n);
     }
 
-    var batchGenState = { apiCompleted: 0 };
+    var batchGenState = {
+        running: false,
+        stopRequested: false,
+        currentJobId: null,
+        abortPoll: null,
+        runExpected: 0,
+        runCompleted: 0,
+        sessionBaseCompleted: 0,
+        baselineSuccessCount: 0
+    };
 
-    function countFinMainAplus(data) {
-        if (!data) return 0;
-        return (data.main || []).length + (data.aplus || []).length;
-    }
+    var finSnapshotTimer = null;
 
-    function syncProgressFromApiCompleted() {
-        if (!window.AiGenProgress) return;
-        progressUpdate({ completed: batchGenState.apiCompleted || 0 });
-    }
-
-    function readProgressExpected() {
-        try {
-            var uid = document.body.getAttribute('data-user-id') || '0';
-            var raw = localStorage.getItem('ai_gen_batch_progress_v3_u' + uid);
-            if (!raw) return 0;
-            var st = JSON.parse(raw);
-            return st && st.totalExpected ? parseInt(st.totalExpected, 10) : 0;
-        } catch (e) {
-            return 0;
+    function stopFinSnapshotPoll() {
+        if (finSnapshotTimer) {
+            clearInterval(finSnapshotTimer);
+            finSnapshotTimer = null;
         }
+    }
+
+    function applySnapshotProgress(snap, tr, asinBaseCompleted, batchSizeHint) {
+        if (!snap || !snap.ok) return;
+        if (tr) applyFinishedImagesToRow(tr, snap);
+        var baseline = batchGenState.baselineSuccessCount || 0;
+        var total = parseInt(snap.total_success, 10) || 0;
+        var generating = parseInt(snap.generating_count, 10) || 0;
+        var delta = Math.max(0, total - baseline);
+        var batchSize = batchSizeHint || batchGenState.runExpected || delta || 0;
+        var inFlight = Math.min(batchSize, delta + generating);
+        batchGenState.runCompleted = asinBaseCompleted + inFlight;
+        syncProgressFromRunCompleted();
+        var detailDone = String(delta);
+        if (generating > 0 && delta < batchSize) {
+            detailDone = delta + ' +' + generating + ' 生成中';
+        }
+        progressUpdate({
+            currentAsin: snap.asin || '',
+            completed: batchGenState.runCompleted,
+            detail: '已生成 ' + detailDone + ' / ' + batchSize + ' 张（' + PARALLEL_WORKERS + ' 路滚动并发）'
+        });
+    }
+
+    function startFinSnapshotPoll(asin, tr, asinBaseCompleted, batchSize) {
+        stopFinSnapshotPoll();
+        function tick() {
+            if (!batchGenState.running || batchGenState.stopRequested) {
+                stopFinSnapshotPoll();
+                return;
+            }
+            fetchFinSnapshot(asin).then(function (snap) {
+                applySnapshotProgress(snap, tr, asinBaseCompleted, batchSize);
+            });
+        }
+        tick();
+        finSnapshotTimer = setInterval(tick, 2000);
+    }
+
+    function currentUserId() {
+        var body = document.body;
+        return body ? String(body.getAttribute('data-user-id') || '0') : '0';
+    }
+
+    function readBatchSession() {
+        try {
+            var raw = localStorage.getItem(BATCH_SESSION_KEY);
+            if (!raw) return null;
+            var st = JSON.parse(raw);
+            if (!st || String(st.userId || '') !== currentUserId()) {
+                localStorage.removeItem(BATCH_SESSION_KEY);
+                return null;
+            }
+            if (st.updatedAt && Date.now() - st.updatedAt > BATCH_POLL_MAX_MS) {
+                localStorage.removeItem(BATCH_SESSION_KEY);
+                return null;
+            }
+            return st;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function saveBatchSession(patch) {
+        try {
+            var prev = readBatchSession() || {};
+            var next = Object.assign({}, prev, patch || {}, {
+                userId: currentUserId(),
+                updatedAt: Date.now()
+            });
+            localStorage.setItem(BATCH_SESSION_KEY, JSON.stringify(next));
+        } catch (e) { /* ignore */ }
+    }
+
+    function clearBatchSession() {
+        try {
+            localStorage.removeItem(BATCH_SESSION_KEY);
+        } catch (e) { /* ignore */ }
+    }
+
+    function syncProgressFromRunCompleted() {
+        if (!window.AiGenProgress) return;
+        progressUpdate({ completed: batchGenState.runCompleted || 0 });
+        saveBatchSession({
+            runCompleted: batchGenState.runCompleted || 0,
+            runExpected: batchGenState.runExpected || 0
+        });
+    }
+
+    function setBatchSubmitLoading(loading, label) {
+        if (!submitBtn) return;
+        if (!submitBtn.dataset.defaultLabel) {
+            submitBtn.dataset.defaultLabel = submitBtn.textContent.trim();
+        }
+        submitBtn.disabled = !!loading;
+        submitBtn.classList.toggle('is-loading', !!loading);
+        submitBtn.textContent = loading
+            ? (label || '生图中…')
+            : submitBtn.dataset.defaultLabel;
+        setBatchStopVisible(!!loading);
+    }
+
+    function setBatchStopVisible(visible) {
+        var stopBtn = document.getElementById('dock-stop-btn');
+        if (!stopBtn) return;
+        stopBtn.style.display = visible ? '' : 'none';
+        stopBtn.disabled = !visible;
+    }
+
+    function applyCancelResult(d, tr) {
+        if (!d) return;
+        batchGenState.running = false;
+        batchGenState.stopRequested = true;
+        stopFinSnapshotPoll();
+        var added = parseInt(d.added, 10);
+        if (isNaN(added)) added = batchGenState.runCompleted || 0;
+        batchGenState.runCompleted = added;
+        batchGenState.abortPoll = d;
+        syncProgressFromRunCompleted();
+        if (tr && (d.finished_images || d.data)) {
+            applyFinishedImagesToRow(tr, d);
+        }
+        var expected = batchGenState.runExpected || parseInt(d.batch_size, 10) || added;
+        var msg = '已停止生图：成功 ' + added + ' / ' + expected + ' 张（不含原有成品图）';
+        showToast(msg, false);
+        progressUpdate({ detail: msg });
+        if (window.AiGenProgress) {
+            AiGenProgress.finish(msg);
+        }
+        clearBatchSession();
+        setBatchSubmitLoading(false);
+        setBatchStopVisible(false);
+        batchGenState.currentJobId = null;
+    }
+
+    function stopBatchGeneration() {
+        if (!batchGenState.running) return;
+        batchGenState.stopRequested = true;
+        setBatchStopVisible(false);
+        saveBatchSession({ stopRequested: true });
+        var session = readBatchSession() || {};
+        var asin = session.asin || '';
+        var tr = asin ? findTrByAsin(asin) : null;
+        if (batchGenState.currentJobId) {
+            var body = new FormData();
+            body.append('job_id', batchGenState.currentJobId);
+            postForm(RUN_JOBS_BATCH_CANCEL_URL, body, 30000).then(function (res) {
+                var d = (res && res.data) || {};
+                if (d.ok) {
+                    batchGenState.abortPoll = d;
+                    applyCancelResult(d, tr);
+                } else {
+                    showToast(d.error || '停止请求失败', true);
+                }
+            }).catch(function () {
+                showToast('停止请求失败，请稍后刷新页面', true);
+            });
+        } else {
+            fetch(RUN_JOBS_BATCH_ACTIVE_URL, { credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (active) {
+                    if (active && active.active && active.job_id) {
+                        batchGenState.currentJobId = active.job_id;
+                        var body = new FormData();
+                        body.append('job_id', active.job_id);
+                        return postForm(RUN_JOBS_BATCH_CANCEL_URL, body, 30000);
+                    }
+                    return null;
+                })
+                .then(function (res) {
+                    if (res && res.data && res.data.ok) {
+                        batchGenState.abortPoll = res.data;
+                        applyCancelResult(res.data, tr);
+                        return;
+                    }
+                    applyCancelResult({
+                        ok: true,
+                        status: 'cancelled',
+                        cancelled: true,
+                        added: batchGenState.runCompleted || 0,
+                        batch_size: batchGenState.runExpected || 0
+                    }, tr);
+                })
+                .catch(function () {
+                    applyCancelResult({
+                        ok: true,
+                        status: 'cancelled',
+                        cancelled: true,
+                        added: batchGenState.runCompleted || 0,
+                        batch_size: batchGenState.runExpected || 0
+                    }, tr);
+                });
+        }
+        progressUpdate({ detail: '正在停止生图…' });
     }
 
     function runPendingJobsParallel(asin, jobs, userNotes, tr, mainTa, aplusTa) {
         if (!jobs || !jobs.length) {
             return Promise.resolve({ ok: true, message: asin + ' 无需生成' });
         }
-        var jobIndex = 0;
-        var errors = [];
-        var successCount = 0;
+        var asinBaseCompleted = batchGenState.runCompleted || 0;
+        var timeoutMs = Math.max(FETCH_TIMEOUT_MS, jobs.length * 120000);
+        var batchSize = jobs.length;
 
-        function runNextBatch() {
-            if (jobIndex >= jobs.length) {
-                if (errors.length && successCount === 0) {
-                    return { ok: false, error: errors.slice(0, 3).join('；') };
-                }
-                return {
-                    ok: true,
-                    partial: errors.length > 0,
-                    message: asin + ' 生图结束：成功 ' + successCount + ' 张' + (errors.length ? '，部分失败' : '')
-                };
+        progressUpdate({
+            detail: '保持 ' + PARALLEL_WORKERS + ' 路并发，完成一张立即补下一张（共 ' + batchSize + ' 张）'
+        });
+
+        fetchFinSnapshot(asin).then(function (snap) {
+            if (snap && snap.ok) {
+                batchGenState.baselineSuccessCount = parseInt(snap.total_success, 10) || 0;
             }
-            var batch = jobs.slice(jobIndex, jobIndex + PARALLEL_WORKERS);
-            var batchEnd = jobIndex + batch.length;
-            jobIndex = batchEnd;
-            progressUpdate({
-                detail: asin + ' · 服务端并行 ' + batch.length + ' 路（' + batchEnd + '/' + jobs.length + '）· 请耐心等待'
+        });
+        startFinSnapshotPoll(asin, tr, asinBaseCompleted, batchSize);
+
+        var body = new FormData();
+        body.append('asin', asin);
+        body.append('jobs_json', JSON.stringify(jobs));
+        body.append('user_notes', userNotes || '');
+        body.append('main_image_requirements', mainTa ? mainTa.value : '');
+        body.append('aplus_image_requirements', aplusTa ? aplusTa.value : '');
+
+        function applyProgressFromJob(d) {
+            if (!d) return;
+            if (d.baseline_success_count != null) {
+                batchGenState.baselineSuccessCount = parseInt(d.baseline_success_count, 10) || 0;
+            }
+            var added = jobProgressAdded(d);
+            var batchSizeLocal = parseInt(d.batch_size, 10) || batchSize;
+            if (d.job_id) {
+                batchGenState.currentJobId = d.job_id;
+            }
+            batchGenState.runCompleted = asinBaseCompleted + added;
+            syncProgressFromRunCompleted();
+            if (tr && (d.finished_images || d.data)) {
+                applyFinishedImagesToRow(tr, d);
+            }
+            fetchFinSnapshot(asin).then(function (snap) {
+                applySnapshotProgress(snap, tr, asinBaseCompleted, batchSizeLocal);
             });
-
-            var body = new FormData();
-            body.append('asin', asin);
-            body.append('jobs_json', JSON.stringify(batch));
-            body.append('user_notes', userNotes || '');
-            body.append('main_image_requirements', mainTa ? mainTa.value : '');
-            body.append('aplus_image_requirements', aplusTa ? aplusTa.value : '');
-
-            return postForm(RUN_JOBS_BATCH_URL, body, FETCH_TIMEOUT_MS).then(function (res) {
-                var d = res.data || {};
-                if (!d.ok) {
-                    errors.push(d.error || '本批生图失败');
-                    showToast(asin + ' 第 ' + batchEnd + '/' + jobs.length + ' 批失败：' + (d.error || ''), true);
-                    if (d.reload) {
-                        return {
-                            ok: false,
-                            error: d.error || '服务热重载，请等待后重新点击批量生图'
-                        };
-                    }
-                    return runNextBatch();
-                }
-                if (tr && d.finished_images) {
-                    applyFinishedImagesToRow(tr, d);
-                }
-                var added = d.added || 0;
-                successCount += added;
-                batchGenState.apiCompleted = successCount;
-                syncProgressFromApiCompleted();
-                (d.errors || []).forEach(function (e) { errors.push(e); });
-                progressUpdate({
-                    detail: asin + ' · 本批完成 +' + added + ' 张 · 累计成功约 ' + successCount + ' 张（' + batchEnd + '/' + jobs.length + '）'
-                });
-                return runNextBatch();
-            }).catch(function (err) {
-                var msg = (err && err.name === 'AbortError') ? '本批超时（可继续下一批）' : '本批网络中断';
-                errors.push(msg);
-                showToast(asin + ' ' + msg, true);
-                return runNextBatch();
+            saveBatchSession({
+                running: true,
+                jobId: d.job_id || batchGenState.currentJobId || '',
+                asin: asin,
+                batchSize: batchSizeLocal,
+                runCompleted: batchGenState.runCompleted,
+                runExpected: batchGenState.runExpected || batchSizeLocal
+            });
+            progressUpdate({
+                currentAsin: asin,
+                completed: batchGenState.runCompleted,
+                detail: '已生成 ' + added + ' / ' + batchSizeLocal + ' 张（' + PARALLEL_WORKERS + ' 路滚动并发）'
             });
         }
 
-        return runNextBatch();
+        return postForm(RUN_JOBS_BATCH_URL, body, timeoutMs).then(function (res) {
+            var d = res.data || {};
+            if (d.sync_reason) {
+                showToast(d.sync_reason, false);
+            }
+            if (d.baseline_success_count != null) {
+                batchGenState.baselineSuccessCount = parseInt(d.baseline_success_count, 10) || 0;
+            }
+            if (d.async && d.job_id) {
+                if (d.baseline_success_count != null) {
+                    batchGenState.baselineSuccessCount = parseInt(d.baseline_success_count, 10) || batchGenState.baselineSuccessCount;
+                }
+                batchGenState.currentJobId = d.job_id;
+                saveBatchSession({
+                    running: true,
+                    jobId: d.job_id,
+                    asin: asin,
+                    batchSize: jobs.length
+                });
+                return pollBatchJob(d.job_id, applyProgressFromJob);
+            }
+            return res;
+        }).then(function (res) {
+            var d = res.data || {};
+            if (batchGenState.stopRequested) {
+                var stoppedAdded = parseInt(d.added, 10) || 0;
+                applyProgressFromJob(d);
+                return {
+                    ok: true,
+                    partial: true,
+                    stopped: true,
+                    message: asin + ' 已停止：本次成功 ' + stoppedAdded + ' 张'
+                };
+            }
+            if (!d.ok) {
+                if (d.reload) {
+                    return { ok: false, error: d.error || '服务热重载，请等待后重新点击批量生图' };
+                }
+                var errMsg = d.error || (d.errors && d.errors.length ? d.errors.join('；') : '') || '生图失败';
+                return { ok: false, error: errMsg };
+            }
+            applyProgressFromJob(d);
+            var added = d.added || 0;
+            var errs = d.errors || [];
+            var cancelled = d.status === 'cancelled' || d.cancelled;
+            return {
+                ok: true,
+                partial: (errs.length > 0 || cancelled) && added >= 0,
+                stopped: cancelled,
+                message: asin + (cancelled ? ' 已停止：' : ' 生图结束：') + '成功 ' + added + ' 张' + (errs.length ? '，部分失败' : '')
+            };
+        }).catch(function (err) {
+            if (batchGenState.stopRequested) {
+                return { ok: true, partial: true, stopped: true, message: asin + ' 已停止生图' };
+            }
+            var msg = (err && err.message) ? err.message : ((err && err.name === 'AbortError') ? '生图超时' : '生图网络中断');
+            return { ok: false, error: msg };
+        }).finally(function () {
+            stopFinSnapshotPoll();
+            batchGenState.currentJobId = null;
+        });
     }
 
     function topupModulesForAsin(asin, userNotes, tr, maxRounds) {
@@ -2562,8 +2937,8 @@
                 }
                 var added = d.added || 0;
                 topupAdded += added;
-                batchGenState.apiCompleted = (batchGenState.apiCompleted || 0) + added;
-                syncProgressFromApiCompleted();
+                batchGenState.runCompleted = (batchGenState.runCompleted || 0) + added;
+                syncProgressFromRunCompleted();
                 if (d.has_more && added > 0) {
                     return nextChunk();
                 }
@@ -2595,7 +2970,7 @@
         });
     }
 
-    function generateModulesForAsin(asin, userNotes, asinIndex, asinTotal) {
+    function generateModulesForAsin(asin, userNotes, asinIndex, asinTotal, cachedPlan) {
         var tr = findTrByAsin(asin);
         if (!tr) return Promise.resolve({ ok: false, error: '行不存在' });
         var mainTa = tr.querySelector('textarea[name="main_image_requirements"]');
@@ -2605,27 +2980,40 @@
             currentAsin: asin,
             asinIndex: asinIndex || 0,
             asinTotal: asinTotal || 0,
-            detail: asin + ' · 分析待生成张数…'
+            detail: asin + ' · 开始生图…'
         });
 
-        return fetchGenerationPlan(asin, mainTa, aplusTa).then(function (planData) {
+        var planPromise = cachedPlan
+            ? Promise.resolve(cachedPlan)
+            : fetchGenerationPlan(asin, mainTa, aplusTa);
+
+        return planPromise.then(function (planData) {
             if (!planData.ok) {
                 return { ok: false, error: planData.error || '无可用模块' };
             }
             var est = planData.estimate || {};
-            var missingTotal = est.missing_to_generate || est.append_per_run || 0;
+            var missingTotal = est.this_run_to_generate || est.missing_to_generate || est.append_per_run || 0;
             var jobs = planData.pending_jobs || [];
             if (!jobs.length) {
-                return { ok: false, error: asin + ' 无可用生图模块，请先填写图需' };
+                if ((est.missing_to_generate || 0) <= 0) {
+                    return { ok: true, message: asin + ' 各模块均已满 ' + IMAGES_PER_MODULE + ' 张' };
+                }
+                return { ok: false, error: asin + ' 无待生成任务' };
             }
+            var moreHint = est.has_more_after_run
+                ? ('；全量待补 ' + (est.missing_to_generate || 0) + ' 张，请再次点击继续（单次上限 ' + MAX_IMAGES_PER_RUN + ' 张）')
+                : '';
             showToast(
-                asin + '：本次追加 ' + missingTotal + ' 张（每模块 ' + IMAGES_PER_MODULE + ' 张），服务端每批 ' + PARALLEL_WORKERS + ' 路并行',
+                asin + '：本次生成 ' + jobs.length + ' 张（每模块 ' + IMAGES_PER_MODULE + ' 张，单次最多 ' + MAX_IMAGES_PER_RUN + ' 张）' + moreHint,
                 false
             );
             return runPendingJobsParallel(asin, jobs, userNotes, tr, mainTa, aplusTa).then(function (jobRes) {
                 if (!jobRes.ok) return jobRes;
                 if (jobRes.partial) {
                     jobRes.message = (jobRes.message || '') + '（失败槽位已跳过，不再补全）';
+                } else if (est.has_more_after_run) {
+                    jobRes.message = (jobRes.message || asin + ' 本次已完成') + '；仍有待生成图片，请再次点击「批量生图」继续';
+                    jobRes.partial = true;
                 }
                 if (tr) applyFinishedImagesToRow(tr, parseFinData(tr));
                 return jobRes;
@@ -2638,66 +3026,207 @@
     function batchGenerateImages() {
         var asins = requireSelectedAsins();
         if (!asins) return;
+        if (batchGenState.running) {
+            showToast('生图任务进行中，请勿重复点击', true);
+            return;
+        }
         var notesEl = document.getElementById('user_notes');
         var userNotes = notesEl ? notesEl.value : '';
 
+        batchGenState.running = true;
+        batchGenState.stopRequested = false;
+        batchGenState.currentJobId = null;
+        batchGenState.abortPoll = null;
+        batchGenState.runCompleted = 0;
+        batchGenState.runExpected = 0;
+        saveBatchSession({ running: true, stopRequested: false, runCompleted: 0, runExpected: 0 });
+        setBatchSubmitLoading(true, '准备中…');
+        if (window.AiGenProgress) {
+            AiGenProgress.start({
+                totalExpected: 0,
+                completed: 0,
+                asinTotal: asins.length,
+                asinIndex: 0,
+                parallelWorkers: PARALLEL_WORKERS,
+                imagesPerModule: IMAGES_PER_MODULE,
+                detail: '正在统计生图计划（通常数秒内完成）…'
+            });
+        }
+
         var planTasks = asins.map(function (asin) {
             var tr = findTrByAsin(asin);
-            if (!tr) return Promise.resolve({ ok: false, asin: asin, missing: 0 });
+            if (!tr) return Promise.resolve({ ok: false, asin: asin, error: '行不存在' });
             var mainTa = tr.querySelector('textarea[name="main_image_requirements"]');
             var aplusTa = tr.querySelector('textarea[name="aplus_image_requirements"]');
-            return fetchGenerationPlan(asin, mainTa, aplusTa).then(function (p) {
-                var est = p.estimate || {};
-                return {
-                    ok: p.ok,
-                    asin: asin,
-                    missing: p.ok ? ((est.missing_to_generate || est.append_per_run) || 0) : 0,
-                    module_count: p.ok ? (est.module_count || (p.modules && p.modules.length) || 0) : 0,
-                    error: p.error
-                };
-            });
+            return fetchGenerationPlan(asin, mainTa, aplusTa);
         });
-
-        batchGenState.apiCompleted = 0;
 
         return Promise.all(planTasks).then(function (plans) {
             var totalExpected = 0;
             var planErrors = [];
+            var planByAsin = {};
             plans.forEach(function (p) {
                 if (p.ok) {
-                    totalExpected += p.missing || (p.module_count * IMAGES_PER_MODULE) || 0;
+                    var jobCount = (p.pending_jobs || []).length;
+                    totalExpected += jobCount;
+                    planByAsin[p.asin] = p;
                 } else {
                     planErrors.push((p.asin || '') + '：' + (p.error || '计划失败'));
                 }
             });
+            batchGenState.runExpected = totalExpected;
             if (planErrors.length && planErrors.length === plans.length) {
                 showToast(planErrors.join('；'), true);
+                if (window.AiGenProgress) AiGenProgress.fail('生图计划失败');
                 return;
             }
             if (window.AiGenProgress) {
-                AiGenProgress.start({
+                AiGenProgress.update({
                     totalExpected: totalExpected,
                     completed: 0,
-                    asinTotal: asins.length,
-                    asinIndex: 0,
-                    parallelWorkers: PARALLEL_WORKERS,
-                    imagesPerModule: IMAGES_PER_MODULE,
                     detail: totalExpected > 0
-                        ? ('预计本次追加 ' + totalExpected + ' 张 · 每批 ' + PARALLEL_WORKERS + ' 路并行')
-                        : '正在准备生图任务…'
+                        ? ('本次将生成 ' + totalExpected + ' 张（不含已有成品图，单次上限 ' + MAX_IMAGES_PER_RUN + ' / ASIN）')
+                        : '无待生成任务'
                 });
             }
             if (totalExpected === 0) {
-                showToast('无法计算生图数量，请确认已填写图需', true);
-                if (window.AiGenProgress) AiGenProgress.fail('无可用模块');
+                showToast('没有待生成的图片，请确认已填写图需', true);
+                if (window.AiGenProgress) AiGenProgress.fail('无待生成任务');
                 return;
             }
+            setBatchSubmitLoading(true, '生图中…');
             return runBatchSequential(asins, function (asin, cur, total) {
-                return generateModulesForAsin(asin, userNotes, cur, total);
-            }, { label: 'AI 生图', btn: submitBtn, useProgress: true });
+                return generateModulesForAsin(asin, userNotes, cur, total, planByAsin[asin]);
+            }, {
+                label: 'AI 生图',
+                useProgress: true,
+                finishMessage: function () {
+                    var done = batchGenState.runCompleted || 0;
+                    var expected = batchGenState.runExpected || 0;
+                    return '本次生图结束：成功 ' + done + ' / ' + expected + ' 张（不含原有成品图）';
+                }
+            });
         }).catch(function () {
+            showToast('批量生图启动失败', true);
             if (window.AiGenProgress) AiGenProgress.fail('批量生图启动失败');
+        }).finally(function () {
+            batchGenState.running = false;
+            batchGenState.stopRequested = false;
+            batchGenState.currentJobId = null;
+            batchGenState.abortPoll = null;
+            clearBatchSession();
+            setBatchSubmitLoading(false);
+            setBatchStopVisible(false);
         });
+    }
+
+    function resumeBatchFromServer(jobData, session) {
+        var asin = (jobData.asin || session.asin || '').trim().toUpperCase();
+        var tr = asin ? findTrByAsin(asin) : null;
+        var jobId = jobData.job_id || session.jobId || '';
+        if (!jobId) return;
+
+        batchGenState.running = true;
+        batchGenState.stopRequested = !!(session && session.stopRequested);
+        batchGenState.currentJobId = jobId;
+        batchGenState.runExpected = parseInt(session.runExpected, 10) || parseInt(jobData.batch_size, 10) || 0;
+        batchGenState.runCompleted = parseInt(session.runCompleted, 10) || parseInt(jobData.added, 10) || 0;
+        batchGenState.baselineSuccessCount = parseInt(jobData.baseline_success_count, 10) || 0;
+        var asinBaseCompleted = 0;
+        var batchSize = batchGenState.runExpected || parseInt(jobData.batch_size, 10) || 0;
+        setBatchSubmitLoading(true, '生图中…');
+
+        if (window.AiGenProgress) {
+            AiGenProgress.start({
+                totalExpected: batchGenState.runExpected,
+                completed: batchGenState.runCompleted,
+                asinTotal: 1,
+                asinIndex: 1,
+                currentAsin: asin,
+                parallelWorkers: PARALLEL_WORKERS,
+                imagesPerModule: IMAGES_PER_MODULE,
+                detail: asin + ' · 已恢复进行中的生图任务…'
+            });
+        }
+
+        fetchFinSnapshot(asin).then(function (snap) {
+            if (snap && snap.ok && !batchGenState.baselineSuccessCount) {
+                batchGenState.baselineSuccessCount = parseInt(snap.total_success, 10) || 0;
+            }
+        });
+        startFinSnapshotPoll(asin, tr, asinBaseCompleted, batchSize);
+
+        function applyProgressFromJob(d) {
+            if (!d) return;
+            if (d.baseline_success_count != null) {
+                batchGenState.baselineSuccessCount = parseInt(d.baseline_success_count, 10) || 0;
+            }
+            var added = jobProgressAdded(d);
+            var batchSizeLocal = parseInt(d.batch_size, 10) || batchGenState.runExpected;
+            batchGenState.runCompleted = asinBaseCompleted + added;
+            syncProgressFromRunCompleted();
+            if (tr && (d.finished_images || d.data)) {
+                applyFinishedImagesToRow(tr, d);
+            }
+            fetchFinSnapshot(asin).then(function (snap) {
+                applySnapshotProgress(snap, tr, asinBaseCompleted, batchSizeLocal);
+            });
+            progressUpdate({
+                currentAsin: asin,
+                totalExpected: Math.max(batchGenState.runExpected, batchSizeLocal),
+                completed: batchGenState.runCompleted,
+                detail: asin + ' · 已生成 ' + added + ' / ' + batchSizeLocal + ' 张'
+            });
+            saveBatchSession({
+                running: true,
+                jobId: d.job_id || jobId,
+                asin: asin,
+                runCompleted: batchGenState.runCompleted,
+                runExpected: Math.max(batchGenState.runExpected, batchSizeLocal)
+            });
+        }
+
+        applyProgressFromJob(jobData);
+        pollBatchJob(jobId, applyProgressFromJob).then(function (res) {
+            var d = (res && res.data) || {};
+            applyProgressFromJob(d);
+            var added = parseInt(d.added, 10) || batchGenState.runCompleted || 0;
+            var expected = batchGenState.runExpected || parseInt(d.batch_size, 10) || added;
+            var msg = '本次生图结束：成功 ' + added + ' / ' + expected + ' 张（不含原有成品图）';
+            if (d.status === 'cancelled' || d.cancelled) {
+                msg = '已停止生图：成功 ' + added + ' / ' + expected + ' 张';
+            }
+            showToast(msg, false);
+            if (window.AiGenProgress) AiGenProgress.finish(msg);
+        }).catch(function (err) {
+            var msg = (err && err.message) ? err.message : '恢复生图任务失败';
+            showToast(msg, true);
+            if (window.AiGenProgress) AiGenProgress.fail(msg);
+        }).finally(function () {
+            stopFinSnapshotPoll();
+            batchGenState.running = false;
+            batchGenState.stopRequested = false;
+            batchGenState.currentJobId = null;
+            batchGenState.abortPoll = null;
+            clearBatchSession();
+            setBatchSubmitLoading(false);
+            setBatchStopVisible(false);
+        });
+    }
+
+    function tryRestoreActiveBatchJob() {
+        if (batchGenState.running) return;
+        var session = readBatchSession();
+        fetch(RUN_JOBS_BATCH_ACTIVE_URL, { credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d || !d.ok || !d.active || !d.job_id) {
+                    if (session && session.running) clearBatchSession();
+                    return;
+                }
+                resumeBatchFromServer(d, session || {});
+            })
+            .catch(function () { /* ignore */ });
     }
 
     function singleModuleGenerateImages() {
@@ -2726,7 +3255,8 @@
         body.append('module_prompt', modulePrompt);
         body.append('user_notes', userNotes);
 
-        batchGenState.apiCompleted = 0;
+        batchGenState.runCompleted = 0;
+        batchGenState.runExpected = IMAGES_PER_MODULE;
         if (window.AiGenProgress) {
             AiGenProgress.start({
                 totalExpected: IMAGES_PER_MODULE,
@@ -2747,8 +3277,8 @@
                 return;
             }
             if (tr) applyFinishedImagesToRow(tr, d);
-            batchGenState.apiCompleted = d.added || 0;
-            syncProgressFromApiCompleted();
+            batchGenState.runCompleted = d.added || 0;
+            syncProgressFromRunCompleted();
             var errMsg = (d.errors || []).join('；');
             var msg = asin + ' · 「' + (d.title || '模块') + '」追加 ' + (d.added || 0) + ' 张（该模块共 ' + (d.module_total || 0) + ' 张）';
             if (errMsg) msg += '；部分失败：' + errMsg;
@@ -2765,9 +3295,17 @@
     if (submitBtn) {
         submitBtn.addEventListener('click', batchGenerateImages);
     }
+    var stopBtn = document.getElementById('dock-stop-btn');
+    if (stopBtn) {
+        stopBtn.addEventListener('click', stopBatchGeneration);
+    }
+    if (window.AiGenProgress) {
+        AiGenProgress.setStopHandler(stopBatchGeneration);
+    }
     if (singleSubmitBtn) {
         singleSubmitBtn.addEventListener('click', singleModuleGenerateImages);
     }
+    tryRestoreActiveBatchJob();
 
     var btnNeedView = document.getElementById('btn-dock-view-need');
     if (btnNeedView) btnNeedView.addEventListener('click', openNeedPreviewModal);

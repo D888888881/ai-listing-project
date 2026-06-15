@@ -11,6 +11,7 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
+        ca-certificates \
         default-mysql-client \
         fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
@@ -27,4 +28,4 @@ RUN chmod +x docker/entrypoint.sh \
 EXPOSE 8000
 
 ENTRYPOINT ["docker/entrypoint.sh"]
-CMD ["gunicorn", "ai_listing_project.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "1200", "--graceful-timeout", "120"]
+CMD ["gunicorn", "ai_listing_project.wsgi:application", "--bind", "0.0.0.0:8000", "-k", "gthread", "--workers", "4", "--threads", "4", "--timeout", "1200", "--graceful-timeout", "120"]

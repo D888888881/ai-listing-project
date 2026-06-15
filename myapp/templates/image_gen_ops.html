@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% block title %}生图运维 - ASIN Lens{% endblock %}
+
+{% block content %}
+<div class="apple-card" style="padding: 28px 32px;">
+  <h2 class="card-title" style="margin-bottom: 8px;">生图运维（阶段 C）</h2>
+  <p style="color:#667085;margin:0 0 20px;font-size:0.9rem;">
+    任务持久化、队列监控、死信重试。并发限额请在「设置 → 生图并发限额」调整。
+  </p>
+
+  {% if messages %}
+    <div style="margin-bottom:16px;">
+      {% for message in messages %}
+        <div style="padding:10px 12px;border-radius:12px;margin-bottom:8px;background:#f2f4f7;border:1px solid #e4e7ec;color:#344054;">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px;">
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">全站 API 并发</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#101828;">{{ limits.global }}</div>
+    </div>
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">普通用户 / 管理员</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#101828;">{{ limits.per_user }} / {{ limits.per_user_superuser }}</div>
+    </div>
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">高优队列 / 普通队列</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#101828;">
+        {{ metrics.celery_queues.image_gen_high|default:"-" }} / {{ metrics.celery_queues.image_gen|default:"-" }}
+      </div>
+      <div style="font-size:0.75rem;color:#98a2b3;">待处理任务数</div>
+    </div>
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">API 429 次数</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#b42318;">{{ metrics.counters.api_http_429|default:0 }}</div>
+    </div>
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">批次 P95 耗时(秒)</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#101828;">{{ metrics.batch_duration_sec.p95|default:"-" }}</div>
+    </div>
+    <div style="padding:14px;border-radius:12px;background:#f9fafb;border:1px solid #eaecf0;">
+      <div style="font-size:0.78rem;color:#667085;">全站活跃 API 槽</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#101828;">{{ metrics.semaphore.global_active_slots|default:"-" }}</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <a href="{% url 'image_gen_ops' %}" style="padding:6px 12px;border-radius:999px;text-decoration:none;{% if not status_filter %}background:#004eeB;color:#fff;{% else %}background:#f2f4f7;color:#344054;{% endif %}">全部</a>
+    {% for val, label in status_choices %}
+      <a href="{% url 'image_gen_ops' %}?status={{ val }}" style="padding:6px 12px;border-radius:999px;text-decoration:none;{% if status_filter == val %}background:#004eeB;color:#fff;{% else %}background:#f2f4f7;color:#344054;{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div style="overflow:auto;">
+    <table style="width:100%;border-collapse:collapse;min-width:1100px;font-size:0.88rem;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">任务 ID</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">ASIN</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">用户</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">状态</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">队列</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">批次</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">成功</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">时间</th>
+          <th style="text-align:left;padding:10px;border-bottom:2px solid #e8e8ed;color:#667085;">操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for job in jobs %}
+        <tr>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;font-family:monospace;font-size:0.8rem;">{{ job.job_id|slice:":12" }}…</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{{ job.asin }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{% if job.user %}{{ job.user.username }}{% else %}-{% endif %}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{{ job.get_status_display }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{{ job.queue_name|default:"-" }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{{ job.batch_size }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">{{ job.added }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;color:#667085;">{{ job.created_at|date:"m-d H:i" }}</td>
+          <td style="padding:10px;border-bottom:1px solid #f2f4f7;">
+            {% if job.status == 'dead' or job.status == 'failed' %}
+              <form method="post" action="{% url 'image_gen_job_retry' %}" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="job_id" value="{{ job.job_id }}">
+                <button type="submit" style="background:#ecfdf3;border:1px solid #d1fadf;border-radius:8px;padding:4px 10px;cursor:pointer;color:#027a48;">重试</button>
+              </form>
+            {% else %}—{% endif %}
+            {% if job.error_message %}
+              <div style="font-size:0.75rem;color:#b42318;margin-top:4px;max-width:220px;word-break:break-all;">{{ job.error_message|truncatechars:80 }}</div>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="9" style="padding:24px;text-align:center;color:#667085;">暂无任务记录</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if page_obj.has_other_pages %}
+    <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}">上一页</a>
+      {% endif %}
+      <span style="color:#667085;">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}">下一页</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -406,6 +406,7 @@
 
                     {% if request.user.is_staff %}
                         <a href="/ai_listing/users" class="{% if request.resolver_match.url_name == 'user_manage' %}nav-active{% endif %}">用户管理</a>
+                        <a href="{% url 'image_gen_ops' %}" class="{% if request.resolver_match.url_name == 'image_gen_ops' %}nav-active{% endif %}">生图运维</a>
                     {% endif %}
                     {% if request.user.is_superuser %}
                         <a href="/ai_listing/approvals" class="nav-link-with-badge {% if request.resolver_match.url_name == 'approval_list' %}nav-active{% endif %}">

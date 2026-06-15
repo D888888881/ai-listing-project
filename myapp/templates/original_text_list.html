@@ -22,6 +22,10 @@
       </div>
     {% endif %}
 
+    <div id="refresh-running-tip" style="display:none; margin: 0 0 14px; padding:10px 14px; border-radius:14px; background:#eff8ff; border:1px solid #b2ddff; color:#175cd3; font-size:0.9rem;">
+      正在刷新数据，请勿重复点击；完成后页面将自动刷新。
+    </div>
+
     <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom: 18px;">
       <div style="display:flex; align-items:flex-end; gap:16px; flex-wrap:wrap; flex:1;">
         <form action="{% url 'import_voc' %}" method="post" enctype="multipart/form-data" style="display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap;">
@@ -127,6 +131,12 @@
         font-weight: 500; color: #0071e3; cursor: pointer; transition: background 0.2s; font-size: 0.8rem;
       }
       .mini-btn:hover { background: #dce9ff; }
+      .mini-btn:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+        background: #eef2f6;
+        color: #667085;
+      }
       .mini-btn.secondary { background: #f2f4f7; color:#344054; }
       .mini-btn.secondary:hover { background: #eaecf0; }
       .stack { display:flex; gap:8px; flex-wrap: wrap; }
@@ -611,23 +621,23 @@
 
             <td>
               <div class="stack">
-                <form action="{% url 'refresh_keywords' row.asin %}" method="post" style="display:inline;">
+                <form action="{% url 'refresh_keywords' row.asin %}" method="post" class="refresh-row-form" style="display:inline;">
                   {% csrf_token %}
                   {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
                   {% include "includes/preserve_get.html" %}
-                  <button type="submit" class="mini-btn">刷新关键词</button>
+                  <button type="submit" class="mini-btn refresh-row-btn" data-loading-text="刷新中...">刷新关键词</button>
                 </form>
-                <form action="{% url 'refresh_ask_rufus' row.asin %}" method="post" style="display:inline;">
+                <form action="{% url 'refresh_ask_rufus' row.asin %}" method="post" class="refresh-row-form" style="display:inline;">
                   {% csrf_token %}
                   {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
                   {% include "includes/preserve_get.html" %}
-                  <button type="submit" class="mini-btn">刷新 Ask Rufus</button>
+                  <button type="submit" class="mini-btn refresh-row-btn" data-loading-text="刷新中...">刷新 Ask Rufus</button>
                 </form>
-                <form action="{% url 'refresh_asin_cluster' row.asin %}" method="post" style="display:inline;">
+                <form action="{% url 'refresh_asin_cluster' row.asin %}" method="post" class="refresh-row-form" style="display:inline;">
                   {% csrf_token %}
                   {% if search_q %}<input type="hidden" name="q" value="{{ search_q }}">{% endif %}
                   {% include "includes/preserve_get.html" %}
-                  <button type="submit" class="mini-btn" title="用关键词列表首词（或首集群首词）搜索亚马逊并写入集群">刷新 ASIN 集群</button>
+                  <button type="submit" class="mini-btn refresh-row-btn" data-loading-text="刷新中..." title="用关键词列表首词（或首集群首词）搜索亚马逊并写入集群">刷新 ASIN 集群</button>
                 </form>
                 <form action="{% url 'delete_original_text_row' row.asin %}" method="post" style="display:inline;"
                       onsubmit="return confirm('确定删除该条原文本记录？');">
@@ -732,6 +742,36 @@
       function clusterRefreshUrl(asin) { return URL_CLUSTER_REFRESH_TMPL.replace(ASIN_PLACE, asin); }
       function clusterSaveUrl(asin) { return URL_CLUSTER_SAVE_TMPL.replace(ASIN_PLACE, asin); }
 
+      function markRefreshSubmitting(form) {
+        const btn = form.querySelector('button[type=submit].refresh-row-btn');
+        if (!btn || btn.disabled) return;
+        if (!btn.dataset.defaultText) {
+          btn.dataset.defaultText = btn.textContent.trim();
+        }
+        btn.disabled = true;
+        btn.textContent = btn.dataset.loadingText || '刷新中...';
+        const stack = form.closest('.stack');
+        if (stack) {
+          stack.querySelectorAll('.refresh-row-form button[type=submit]').forEach(function (otherBtn) {
+            if (otherBtn !== btn) otherBtn.disabled = true;
+          });
+        }
+        const tip = document.getElementById('refresh-running-tip');
+        if (tip) tip.style.display = 'block';
+      }
+
+      document.querySelectorAll('.refresh-row-form').forEach(function (form) {
+        form.addEventListener('submit', function () {
+          markRefreshSubmitting(form);
+        });
+      });
+
+      vocBody.addEventListener('submit', function (e) {
+        const form = e.target;
+        if (!form || form.tagName !== 'FORM' || !form.classList.contains('refresh-row-form')) return;
+        markRefreshSubmitting(form);
+      });
+
       document.querySelectorAll('.voc-open-btn').forEach(btn => {
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
@@ -827,10 +867,10 @@
                       <button type="submit" class="btn-pill btn-pill-primary" style="padding:8px 18px;">保存集群</button>
                     </div>
                   </form>
-                  <form action="${clusterRefreshUrl(asin)}" method="post" onsubmit="return confirm('将用关键词首词搜索亚马逊并覆盖当前集群列表，确定？');">
+                  <form action="${clusterRefreshUrl(asin)}" method="post" class="refresh-row-form" onsubmit="return confirm('将用关键词首词搜索亚马逊并覆盖当前集群列表，确定？');">
                     <input type="hidden" name="csrfmiddlewaretoken" value="${getCsrfToken()}">
                     ${escQ}
-                    <button type="submit" class="mini-btn" style="padding:10px 16px;">从关键词自动拉取集群</button>
+                    <button type="submit" class="mini-btn refresh-row-btn" style="padding:10px 16px;" data-loading-text="拉取中...">从关键词自动拉取集群</button>
                   </form>
                 </div>
               </div>
