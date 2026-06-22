@@ -10,7 +10,7 @@ url = os.environ.get("NANO_BANANA_API_URL", "https://grsai.dakka.com.cn/v1/api/g
 
 
 def _nano_banana_api_key() -> str:
-    key = os.environ.get("NANO_BANANA_API_KEY", "").strip()
+    key = os.environ.get("NANO_BANANA_API_KEY", "sk-8a6dc9f2e6cf4c43907011d2215e3b52").strip()
     if not key:
         raise RuntimeError("请设置环境变量 NANO_BANANA_API_KEY")
     return key

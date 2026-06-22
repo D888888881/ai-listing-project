@@ -75,6 +75,12 @@ while time.time() < deadline:
         time.sleep(2)
 
 print(f"Redis not ready after timeout: {last_err}", file=sys.stderr)
+if "127.0.0.1" in url or "localhost" in url:
+    print(
+        "Hint: inside Docker Compose use REDIS_URL=redis://redis:6379/0 "
+        "(127.0.0.1 points to the web container itself, not the redis service).",
+        file=sys.stderr,
+    )
 sys.exit(1)
 PY
 fi

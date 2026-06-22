@@ -59,7 +59,11 @@ services:
       USE_X_FORWARDED_HOST: ${USE_X_FORWARDED_HOST:-true}
       SITE_BASE_URL: ${SITE_BASE_URL:-http://localhost:8000}
       NANO_BANANA_MEDIA_PUBLIC_BASE: ${NANO_BANANA_MEDIA_PUBLIC_BASE:-http://localhost:8000/media}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # 容器内必须用服务名 redis，勿用 127.0.0.1（会指向 web 自身导致 Connection refused）
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PROTOCOL: ${REDIS_PROTOCOL:-2}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
     expose:
       - "8000"
     volumes:
@@ -94,9 +98,10 @@ services:
       DB_NAME: ${MYSQL_DATABASE:-ai_listing}
       DB_USER: ${MYSQL_USER:-ai_listing}
       DB_PASSWORD: ${MYSQL_PASSWORD:-change_me_db}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_PROTOCOL: ${REDIS_PROTOCOL:-2}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
       CELERY_WORKER_QUEUES: ${CELERY_WORKER_QUEUES:-image_gen_high,image_gen}
       CELERY_WORKER_CONCURRENCY: ${CELERY_WORKER_CONCURRENCY:-10}
     command:
@@ -130,7 +135,7 @@ services:
     env_file:
       - .env
     environment:
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_BROKER_URL: redis://redis:6379/0
     command:
       [
         "celery",
@@ -138,7 +143,7 @@ services:
         "ai_listing_project",
         "flower",
         "--port=5555",
-        "--broker_api=${CELERY_BROKER_URL:-redis://redis:6379/0}",
+        "--broker_api=redis://redis:6379/0",
       ]
     ports:
       - "${FLOWER_PORT:-5555}:5555"

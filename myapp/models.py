@@ -78,6 +78,12 @@ class OriginalAsinData(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["created_by", "-updated_at"], name="myapp_origi_created_2c47cc_idx"),
+            models.Index(fields=["assigned_to", "-updated_at"], name="myapp_origi_assigne_04df35_idx"),
+        ]
+
     def __str__(self):
         return f"Original({self.asin})"
 
@@ -116,6 +122,10 @@ class AiListingGenerationHistory(models.Model):
         ordering = ["-created_at"]
         verbose_name = "AI-Listing 生成历史"
         verbose_name_plural = "AI-Listing 生成历史"
+        indexes = [
+            models.Index(fields=["asin", "-created_at"], name="myapp_ailis_asin_aa44cb_idx"),
+            models.Index(fields=["generated_by", "-created_at"], name="myapp_ailis_generat_90c7eb_idx"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.asin} @ {self.created_at}"
@@ -272,8 +282,11 @@ class ImageGenJob(models.Model):
         verbose_name = "生图任务"
         verbose_name_plural = "生图任务"
         indexes = [
-            models.Index(fields=["status", "-created_at"]),
-            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["status", "-created_at"], name="myapp_image_status_created_idx"),
+            models.Index(fields=["user", "-created_at"], name="myapp_image_user_created_idx"),
+            models.Index(fields=["user", "status", "-created_at"], name="myapp_image_user_id_8ed1d1_idx"),
+            models.Index(fields=["orig_pk", "-created_at"], name="myapp_image_orig_pk_6d23c9_idx"),
+            models.Index(fields=["status", "-updated_at"], name="myapp_image_status_913e99_idx"),
         ]
 
     def __str__(self) -> str:
